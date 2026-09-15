@@ -12,3 +12,4 @@ if (-not (Test-Path $dotnetPath)) {
 }
 
 & $dotnetPath run --project "$PSScriptRoot\..\src\YumeShelf\YumeShelf.csproj"
+exit $LASTEXITCODE

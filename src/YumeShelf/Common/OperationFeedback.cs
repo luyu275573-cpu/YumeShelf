@@ -6,8 +6,11 @@ public sealed record OperationNotice(int Sequence, string Message, FeedbackKind 
 {
     public string Title => Kind switch
     {
-        FeedbackKind.Success => "操作成功", FeedbackKind.Error => "操作未完成",
-        FeedbackKind.Warning => "请注意", FeedbackKind.Progress => "正在处理", _ => "操作提示"
+        FeedbackKind.Success => "操作成功",
+        FeedbackKind.Error => "操作未完成",
+        FeedbackKind.Warning => "请注意",
+        FeedbackKind.Progress => "正在处理",
+        _ => "操作提示"
     };
     public string Glyph => Kind switch { FeedbackKind.Success => "✓", FeedbackKind.Error => "!", FeedbackKind.Warning => "!", FeedbackKind.Progress => "…", _ => "i" };
     public bool AutoDismiss => Kind is FeedbackKind.Success or FeedbackKind.Info;

@@ -1,5 +1,8 @@
 using System.IO;
 using System.Windows.Media.Imaging;
+using System.Diagnostics;
+using YumeShelf.Common;
+using YumeShelf.Infrastructure;
 
 namespace YumeShelf.Application;
 
@@ -30,8 +33,12 @@ public static class OfflineGameMetadataService
     {
         try
         {
+            var deadline = Stopwatch.StartNew();
             var candidates = Directory.EnumerateFiles(directory, "*.*", SearchOption.TopDirectoryOnly)
                 .Where(path => ImageExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+                .Take(128)
+                .OrderByDescending(path => CoverHints.Any(hint => Path.GetFileName(path).Contains(hint, StringComparison.OrdinalIgnoreCase)))
+                .TakeWhile(_ => deadline.Elapsed < TimeSpan.FromSeconds(2))
                 .Select(path => (Path: path, Score: CoverScore(path, title)))
                 .Where(item => item.Score > 0)
                 .OrderByDescending(item => item.Score)
@@ -39,8 +46,8 @@ public static class OfflineGameMetadataService
                 .ToArray();
             return candidates.Length == 0 ? GetDefaultCoverPath() : candidates[0].Path;
         }
-        catch (UnauthorizedAccessException) { return GetDefaultCoverPath(); }
-        catch (IOException) { return GetDefaultCoverPath(); }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        { AppLog.Write("cover.discovery-failed", ex); return GetDefaultCoverPath(); }
     }
 
     private static int CoverScore(string path, string title)
@@ -50,13 +57,12 @@ public static class OfflineGameMetadataService
         if (name.Contains(title, StringComparison.OrdinalIgnoreCase)) score += 6;
         try
         {
-            using var stream = File.OpenRead(path);
-            var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.DelayCreation, BitmapCacheOption.OnLoad);
-            var ratio = (double)decoder.Frames[0].PixelWidth / decoder.Frames[0].PixelHeight;
-            if (ratio >= 0.55 && ratio <= 0.85) score += 4;
-            if (decoder.Frames[0].PixelWidth >= 500 && decoder.Frames[0].PixelHeight >= 500) score += 2;
+            var image = GameImageLoader.Load(path, 320);
+            var ratio = (double)image.PixelWidth / image.PixelHeight;
+            if ((ratio >= 0.55 && ratio <= 0.85) || (ratio >= 1.5 && ratio <= 2)) score += 4;
+            if (image.PixelWidth >= 250 && image.PixelHeight >= 140) score += 2;
         }
-        catch (Exception) { return score; }
+        catch (Exception ex) when (GameImageLoader.IsImageError(ex)) { AppLog.Write("cover.invalid-candidate", ex); return 0; }
         return score;
     }
 

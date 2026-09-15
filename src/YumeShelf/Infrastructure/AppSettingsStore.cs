@@ -5,6 +5,7 @@ namespace YumeShelf.Infrastructure;
 
 public sealed class AppSettingsStore
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly string _settingsPath;
 
     public AppSettingsStore(string? settingsPath = null)
@@ -21,16 +22,15 @@ public sealed class AppSettingsStore
             var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_settingsPath));
             return (settings ?? new AppSettings()).Normalize();
         }
-        catch (JsonException) { return new AppSettings(); }
-        catch (IOException) { return new AppSettings(); }
-        catch (UnauthorizedAccessException) { return new AppSettings(); }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        { AppLog.Write("settings.load-failed", ex); return new AppSettings(); }
     }
 
     public void Save(AppSettings settings)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath)!);
         var temporaryPath = _settingsPath + ".tmp";
-        File.WriteAllText(temporaryPath, JsonSerializer.Serialize(settings.Normalize(), new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(temporaryPath, JsonSerializer.Serialize(settings.Normalize(), JsonOptions));
         File.Move(temporaryPath, _settingsPath, true);
     }
 
@@ -55,9 +55,13 @@ public sealed record AppSettings
         BackgroundOpacity = double.IsFinite(BackgroundOpacity) ? Math.Clamp(BackgroundOpacity, 0, 1) : 0.6,
         BackgroundBlur = double.IsFinite(BackgroundBlur) ? Math.Clamp(BackgroundBlur, 0, 30) : 0,
         PageTransparency = double.IsFinite(PageTransparency) ? Math.Clamp(PageTransparency, 0, 1) : 0.18
-        ,ColorPalette = ColorPalette is "樱粉色" or "浅蓝色" or "淡黄色" or "跟随壁纸配色" ? ColorPalette : "樱粉色"
-        ,AiApiBaseUrl = string.IsNullOrWhiteSpace(AiApiBaseUrl) ? "https://api.openai.com/v1" : AiApiBaseUrl.Trim()
-        ,AiModel = string.IsNullOrWhiteSpace(AiModel) ? "gpt-4o-mini" : AiModel.Trim()
-        ,AiTimeoutSeconds = Math.Clamp(AiTimeoutSeconds, 5, 120)
+        ,
+        ColorPalette = ColorPalette is "樱粉色" or "浅蓝色" or "淡黄色" or "跟随壁纸配色" ? ColorPalette : "樱粉色"
+        ,
+        AiApiBaseUrl = string.IsNullOrWhiteSpace(AiApiBaseUrl) ? "https://api.openai.com/v1" : AiApiBaseUrl.Trim()
+        ,
+        AiModel = string.IsNullOrWhiteSpace(AiModel) ? "gpt-4o-mini" : AiModel.Trim()
+        ,
+        AiTimeoutSeconds = Math.Clamp(AiTimeoutSeconds, 5, 120)
     };
 }

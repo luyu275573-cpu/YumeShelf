@@ -88,7 +88,7 @@
                                     <Image.Effect><BlurEffect Radius="{Binding BackgroundBlur}" KernelType="Gaussian" /></Image.Effect>
                                 </Image>
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasBackground, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-                                    <TextBlock Text="默认深色背景" FontSize="18" HorizontalAlignment="Center" />
+                                    <TextBlock Text="使用默认页面背景" FontSize="18" HorizontalAlignment="Center" />
                                     <TextBlock Text="选择一张图片开始预览" Foreground="{DynamicResource MutedTextBrush}" Margin="0,8,0,0" />
                                 </StackPanel>
                                 <Border VerticalAlignment="Bottom" Background="{DynamicResource OverlayBrush}" Padding="14,10">
@@ -173,7 +173,7 @@
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
                                     <StackPanel><TextBlock Text="模型名称" FontWeight="SemiBold"/><TextBox Text="{Binding AiModel, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource EditorTextBox}" Margin="0,6,12,0" /></StackPanel>
-                                    <StackPanel Grid.Column="1"><TextBlock Text="超时（秒）" FontWeight="SemiBold"/><TextBox Text="{Binding AiTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource EditorTextBox}" Margin="0,6,0,0" /></StackPanel>
+                                    <StackPanel Grid.Column="1"><TextBlock Text="超时（秒）" FontWeight="SemiBold"/><TextBox x:Name="AiTimeoutBox" Text="{Binding AiTimeoutSeconds, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" ToolTip="5–120 秒，覆盖一次完整任务" Style="{StaticResource EditorTextBox}" Margin="0,6,0,0" /></StackPanel>
                                 </Grid>
                                 <WrapPanel Margin="0,18,0,0"><Button Content="检查服务" Command="{Binding TestAiConnectionCommand}" Style="{StaticResource SecondaryButton}" Margin="0,0,10,8"/><Button Content="测试模型回答" Command="{Binding TestAiModelCommand}" Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/></WrapPanel>
                                 <TextBlock Text="{Binding AiStatus}" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
@@ -190,7 +190,7 @@
                     <TextBlock Text="{Binding SaveNotice}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,12,0" />
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
                         <Button Content="取消" Command="{Binding CancelCommand}" Style="{StaticResource SecondaryButton}" MinWidth="72" Margin="0,0,12,0" ToolTip="恢复已保存的设置" />
-                        <Button Content="确认并保存" Command="{Binding ConfirmCommand}" Style="{StaticResource PrimaryButton}" MinWidth="110" />
+                        <Button IsEnabled="{Binding ElementName=AiTimeoutBox, Path=(Validation.HasError), Converter={StaticResource InverseBooleanConverter}}" Content="确认并保存" Command="{Binding ConfirmCommand}" Style="{StaticResource PrimaryButton}" MinWidth="110" />
                     </StackPanel>
                 </Grid>
             </Border>

@@ -3,7 +3,6 @@ using System.Windows.Controls;
 using System.IO;
 using YumeShelf.Application;
 using YumeShelf.Common;
-using WinFormsFolderDialog = System.Windows.Forms.FolderBrowserDialog;
 using Win32OpenFileDialog = Microsoft.Win32.OpenFileDialog;
 
 namespace YumeShelf.Presentation;
@@ -15,15 +14,17 @@ public partial class AddGameWindow : Window
     private readonly AddGameViewModel _vm = new();
     private readonly GameScanService _scanner = new();
     private readonly Func<string, GameAddOutcome> _addPath;
+    private readonly Func<IReadOnlyList<string>, CancellationToken, Task<GameImportResult>>? _addBatch;
     private CancellationTokenSource? _scanCancellation;
     private bool _closed;
     private int _addedCount;
     public string? ResultMessage { get; private set; }
     public FeedbackKind ResultKind { get; private set; }
 
-    public AddGameWindow(Func<string, GameAddOutcome> addPath)
+    public AddGameWindow(Func<string, GameAddOutcome> addPath, Func<IReadOnlyList<string>, CancellationToken, Task<GameImportResult>>? addBatch = null)
     {
         _addPath = addPath;
+        _addBatch = addBatch;
         DataContext = _vm;
         InitializeComponent();
         _vm.PropertyChanged += (_, args) =>
@@ -49,8 +50,8 @@ public partial class AddGameWindow : Window
 
     private void ChooseFolder_Click(object sender, RoutedEventArgs e)
     {
-        using var dialog = new WinFormsFolderDialog { Description = "选择要搜索的磁盘或游戏文件夹", UseDescriptionForTitle = true };
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK) _vm.SearchRoot = dialog.SelectedPath;
+        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "选择要搜索的磁盘或游戏文件夹", Multiselect = false };
+        if (dialog.ShowDialog(this) == true) _vm.SearchRoot = dialog.FolderName;
     }
 
     private async void ActionButton_Click(object sender, RoutedEventArgs e)
@@ -59,14 +60,14 @@ public partial class AddGameWindow : Window
         if (ModeTabs.SelectedIndex == 1)
         {
             var dialog = new Win32OpenFileDialog { Filter = "Windows 游戏程序 (*.exe)|*.exe", CheckFileExists = true };
-            if (dialog.ShowDialog(this) == true) AddSelected([dialog.FileName]);
+            if (dialog.ShowDialog(this) == true) await AddSelectedAsync([dialog.FileName]);
             else ShowResult("已取消选择，未添加游戏。", FeedbackKind.Info);
             return;
         }
 
         if (_vm.Candidates.Count > 0)
         {
-            AddSelected(_vm.Candidates.Where(x => x.IsSelected).Select(x => x.ExecutablePath).ToArray());
+            await AddSelectedAsync(_vm.Candidates.Where(x => x.IsSelected).Select(x => x.ExecutablePath).ToArray());
             return;
         }
         if (!Directory.Exists(_vm.SearchRoot)) { ShowResult("搜索路径不存在，请选择有效文件夹。", FeedbackKind.Error); return; }
@@ -80,8 +81,7 @@ public partial class AddGameWindow : Window
             var found = await _scanner.ScanAsync(_vm.SearchRoot, new HashSet<string>(StringComparer.OrdinalIgnoreCase), cancellation.Token);
             if (_closed) return;
             foreach (var item in found) _vm.Candidates.Add(item);
-            ShowResult(found.Count == 0 ? "扫描完成，未发现候选游戏。可以更换目录或使用手动添加。"
-                : $"扫描完成，发现 {found.Count} 个候选。请勾选后点击“确认添加”。", FeedbackKind.Info);
+            ShowResult(found.Summary + (found.Count == 0 ? "可以更换目录或使用手动添加。" : "请勾选后点击“确认添加”。"), found.IsIncomplete ? FeedbackKind.Warning : FeedbackKind.Info);
         }
         catch (OperationCanceledException) { if (!_closed) ShowResult("扫描已停止，未添加游戏。", FeedbackKind.Info); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
@@ -102,6 +102,31 @@ public partial class AddGameWindow : Window
             else if (result == GameAddOutcome.Duplicate) skipped++;
             else failed++;
         }
+        CompleteImport(skipped, failed);
+    }
+
+    private async Task AddSelectedAsync(IReadOnlyList<string> paths)
+    {
+        if (_addBatch is null) { AddSelected(paths); return; }
+        if (paths.Count == 0) { ShowResult("请至少勾选一个游戏后再确认添加。", FeedbackKind.Warning); return; }
+        _vm.IsScanning = true;
+        ActionButton.Content = "正在添加…";
+        using var cancellation = new CancellationTokenSource();
+        _scanCancellation = cancellation;
+        ShowResult("正在读取本地资料并添加游戏…", FeedbackKind.Progress);
+        try
+        {
+            var result = await _addBatch(paths, cancellation.Token);
+            if (_closed) return;
+            _addedCount += result.Added;
+            CompleteImport(result.Duplicates, result.Failed);
+        }
+        catch (OperationCanceledException) { if (!_closed) ShowResult("已取消添加。", FeedbackKind.Info); }
+        finally { _scanCancellation = null; _vm.IsScanning = false; UpdateActionLabel(); }
+    }
+
+    private void CompleteImport(int skipped, int failed)
+    {
         ResultKind = failed > 0 ? FeedbackKind.Error : _addedCount > 0 ? FeedbackKind.Success : FeedbackKind.Info;
         ResultMessage = $"已添加 {_addedCount} 个游戏；本次跳过 {skipped} 个重复项，{failed} 项失败。";
         if (failed > 0) ResultMessage += " 请检查启动文件是否存在及游戏库写入权限后重试。";

@@ -481,3 +481,25 @@ G:\\galgameStart\\src\\YumeShelf\\bin\\Debug\\net8.0-windows\\YumeShelf.exe
 - NuGet 当前源未报告已知漏洞包；framework-dependent 发布成功，必要图片资源齐全。实际验证 `dotnet test` 只执行 VSTest 构建目标，没有运行控制台回归，列为门禁缺口。
 - 最终探针证据：`.runtime/project-audit/probe-build/bin/AuditProbes/release/evidence/5f9e0cc9d717489382891a509213f4c1/`，包含结果 JSON、布局截图和无害进程日志。探针通过表示复现了问题，修复后须改为断言正确行为。
 - 同步 README、总开发文档及 AI 文档的审查入口。原 Release 进程 22180 保持运行，本轮没有重启或替换用户当前应用。
+
+### 2026-09-15：全面修复 R01–R20，版本 0.2.0
+
+- 按用户“针对问题全面修复”的要求，落实审查报告全部 20 项；审查报告 §9 逐项记录行为、证据和未完成的发行验收。沿用 .NET/WPF 原生能力，未新增第三方依赖。
+- 先保存完整项目快照 `.runtime/repair-baseline-20260915/`，随后建立本地 Git，以 Codex 作者记录修复前源码快照 `4c68f97`。忽略运行数据/日志/构建产物，不推送远程仓库，不变更用户全局 Git 身份配置。
+- 游戏库增加稳定 ID/记录校验、损坏只读状态、显式恢复原件留存、16 MiB 预算、写入锁、哈希冲突检查、刷盘临时文件及上一版备份。启动不再自动清空或去重写回库。
+- 修复集合通知中重入 Refresh 的重复卡片；运行中刷新按 ID 更新当前对象并记录退出；移除仍运行的条目不会在退出后重建。遗留 Running 标记为记录中断。未保存的失败修改退出前可重试/放弃/取消，失败重试不关闭。
+- 自动/手动共享引擎检测，支持 Ren'Py 目录及自定义脚本/背景/语音 BIN 结构，通用引擎必须有额外上下文。实际目录复测发现无假名/无存档的廃村少女漏检，已补足资源组合判据和同名 EXE/BIN 配对，排除配置程序、优先汉化入口。
+- 只读扫描樱之诗V1.2 和 Gamex-006800，分别找到 `BGI.chs.exe` 与 `haison_fd2_chs.exe`；本轮未启动第三方游戏，不将两目录结果视为全 G 盘或所有引擎验收。
+- 扫描明确返回不完整原因，统一 12 层/10000 目录/500 候选/4096 枚举项/60 秒软上限，跳过重解析和无权限目录。候选勾选可通知 UI，批量元数据读取移至工作线程，批量只提交一次库文件。
+- 统一图片校验/缩略图/默认封面回退，单图 32 MiB/4000 万像素、128 候选/2 秒软预算。专项回归发现 InvalidDataException 不属于 IOException 的捕获缺口，补齐图片与库边界，避免超大文件触发崩溃。
+- 编辑页可重新绑定启动 EXE，保留游戏 ID、收藏及统计；长表单/简介可滚动、底部保存固定。主窗口初始化导航延后至继承数据上下文完成，解决部分 TextBlock 初始绑定中断而简介/状态空白的问题。
+- 卡片封面 16:9，详情真正圆角裁剪；夜间统一控件资源，分离按钮底色与强调文字色，关键文字对比度 4.5:1。排序、中文运行状态、真实可启动状态、键盘焦点、可访问名称与 AI Enter/Shift+Enter 完善。
+- 500 条目首次加载/渲染/筛选约 4.5 秒，改为每页 60 条后同场景 1344 毫秒；全库搜索/排序、翻页后的选中项仍有效。未引入自定义虚拟化面板。
+- AI 云端 HTTPS/本机 HTTP 回环边界，禁止自动重定向，变更来源清空 Key；共享 HttpClient、整任务 5–120 秒期限、请求/响应/历史/澄清预算。原消息重试、取消和截断状态明确，失败/无关内容不污染成功历史。测试只使用虚构 Key 和回环模拟 API。
+- 增加脱敏轮换日志、启动/全局异常处理；清理无调用 AiDomainGuard、StrongFiles 和旧配色选项，密钥存储归入 Infrastructure；复用序列化配置，增加编辑器/换行规范。
+- 使用原有用户图标生成 16/32/48/256 多尺寸 ICO，内嵌 EXE 与版本 0.2.0。统一 `scripts/check.ps1` 串联带警告门禁的 Release 构建、两套控制台回归和依赖框架发布资源/版本/图标检查；修复 build/run 脚本退出码，日志捕获原生命令输出。
+- 最终统一检查通过：0 编译警告/错误，SettingsChecks 全部通过，ReliabilityChecks 92 项（含两个可选真实目录）通过，无 WPF 绑定错误，发布校验通过。完整日志 `.runtime/checks/check-20260915-203626.log`；可靠性截图/JSON 位于 `.runtime/checks/bin/YumeShelf.ReliabilityChecks/release/test-artifacts/acd530972cf34b42b27935039edee792/`，设置证据位于 `.runtime/checks/bin/YumeShelf.SettingsChecks/release/test-artifacts/53cf469cd5d14ed7bf1470270f20979a/`。
+- 同步主开发文档 v0.2、AI 文档 v1.3、README 与审查报告。真实模型语义、联网检索/资料审核、物理输入法/读屏器/跨 DPI、干净 Windows 安装升级、自包含发行和更大压力场景仍明确标为待验收。
+- 收尾增加未选中游戏的明确提示与中性封面占位，避免残留蓝底和空白说明；额外读取全规则分析结果，处理原生标题栏 HRESULT 记录，并对已在 OnExit 释放的 WPF 单实例 Mutex 作局部生命周期说明，其余设计/命名建议未宣称全部消除。
+- 收尾后的最终统一门禁再次通过：SettingsChecks 全部通过、ReliabilityChecks **93 项**（默认不附加目录为 91 项）通过，0 编译警告/错误，无 WPF 绑定错误，发布校验通过。新证据目录：`.runtime/checks/bin/YumeShelf.ReliabilityChecks/release/test-artifacts/cee2af3000964b0a99795986941e5714/`；设置渲染：`.runtime/checks/bin/YumeShelf.SettingsChecks/release/test-artifacts/fa46e1620dc7444f849bdcae28eaca47/`。500 条目最后一次测量 1550 毫秒，较改进前约 4.5 秒降低。
+- 正式 Release 构建通过；启动进程 23136，确认窗口标题、原生句柄、响应状态和版本 0.2.0.0。第二次启动的进程正常退出并激活已有窗口，保持单实例。启动前后用户 library.json/settings.json 的 SHA-256 均一致；没有清理或重写用户数据。

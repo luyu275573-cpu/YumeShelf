@@ -9,8 +9,9 @@
     <SolidColorBrush x:Key="BorderBrush" Color="#303B49" />
     <SolidColorBrush x:Key="PrimaryTextBrush" Color="#EDF2F7" />
     <SolidColorBrush x:Key="MutedTextBrush" Color="#97A4B3" />
-    <SolidColorBrush x:Key="AccentBrush" Color="#E87745" />
-    <SolidColorBrush x:Key="AccentSoftBrush" Color="#38231D" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#536277" />
+    <SolidColorBrush x:Key="AccentTextBrush" Color="#AAB9CB" />
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="#27303C" />
     <SolidColorBrush x:Key="TealBrush" Color="#63B9AA" />
     <SolidColorBrush x:Key="CoverPlaceholderBrush" Color="#345A7E" />
     <SolidColorBrush x:Key="SearchBackgroundBrush" Color="#202936" />

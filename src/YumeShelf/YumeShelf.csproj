@@ -3,11 +3,14 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>YumeShelf</RootNamespace>
     <AssemblyName>YumeShelf</AssemblyName>
+    <ApplicationIcon>Assets\YumeShelf.ico</ApplicationIcon>
+    <Version>0.2.0</Version>
+    <Product>YumeShelf</Product>
+    <Description>Windows 本地 Galgame 游戏库与 Yume 助手</Description>
     <Platforms>AnyCPU</Platforms>
   </PropertyGroup>
   <ItemGroup>

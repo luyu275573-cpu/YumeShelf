@@ -12,4 +12,6 @@ if (-not (Test-Path $dotnetPath)) {
 }
 
 & $dotnetPath restore "$PSScriptRoot\..\YumeShelf.sln"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $dotnetPath build "$PSScriptRoot\..\YumeShelf.sln" --configuration Release
+exit $LASTEXITCODE

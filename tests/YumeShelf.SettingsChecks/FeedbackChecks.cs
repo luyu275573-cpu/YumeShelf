@@ -87,7 +87,8 @@ internal static partial class Program
         vm.RefreshLibraryCommand.Execute(null);
         Check(vm.Games.Count == 1 && vm.Feedback.Current?.Kind == FeedbackKind.Error,
             "corrupt library refresh reports error and retains the current list");
-        games.Save(vm.Games);
+        games.Recover(vm.Games);
+        vm.RefreshLibraryCommand.Execute(null);
         vm.SelectedGame = vm.Games.Single();
         vm.SelectedGame.ExecutablePath = Path.Combine(output, "missing.exe");
         vm.LaunchGameCommand.Execute(null);

@@ -28,6 +28,12 @@ public partial class SettingsPage : System.Windows.Controls.UserControl
     {
         if (sender is SettingsViewModel vm && args.PropertyName is nameof(SettingsViewModel.ColorPalette) or nameof(SettingsViewModel.NightMode))
             ThemePalette.Apply(Resources, vm.DraftSettings);
+        if (sender is SettingsViewModel keyVm && args.PropertyName == nameof(SettingsViewModel.AiApiKey) && AiKeyBox.Password != keyVm.AiApiKey)
+        {
+            _updatingKey = true;
+            try { AiKeyBox.Password = keyVm.AiApiKey; }
+            finally { _updatingKey = false; }
+        }
     }
 
     private void AiKeyBox_OnPasswordChanged(object sender, RoutedEventArgs e)

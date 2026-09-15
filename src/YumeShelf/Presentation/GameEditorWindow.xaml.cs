@@ -1,6 +1,8 @@
-using System.Windows;
+using System.Globalization;
 using System.IO;
-using Microsoft.Win32;
+using System.Windows;
+using System.Windows.Media;
+using YumeShelf.Common;
 using YumeShelf.Domain;
 
 namespace YumeShelf.Presentation;
@@ -8,75 +10,80 @@ namespace YumeShelf.Presentation;
 public partial class GameEditorWindow : Window
 {
     private readonly Game _game;
-
-    public GameEditorWindow(Game game)
+    private readonly Func<string, bool> _isDuplicate;
+    private readonly CoverImageConverter _cover = new();
+    public GameEditorWindow(Game game, Func<string, bool>? isDuplicate = null, bool isRunning = false)
     {
         _game = game;
+        _isDuplicate = isDuplicate ?? (_ => false);
         InitializeComponent();
-        TitleBox.Text = game.Title;
-        EngineBox.Text = game.Engine;
-        YearBox.Text = game.ReleaseYear?.ToString() ?? string.Empty;
+        TitleBox.Text = game.Title; EngineBox.Text = game.Engine;
+        YearBox.Text = game.ReleaseYear?.ToString(CultureInfo.InvariantCulture) ?? "";
+        ExecutableBox.Text = game.ExecutablePath;
+        RelinkButton.IsEnabled = !isRunning;
         WorkingDirectoryBox.Text = game.WorkingDirectory;
         ArgumentsBox.Text = game.LaunchArguments;
-        CoverBox.Text = game.CoverPath ?? string.Empty;
+        CoverBox.Text = game.CoverPath ?? "";
         DescriptionBox.Text = game.Description;
+        UpdatePreview();
     }
-
+    private void ChooseExecutable_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Windows 游戏程序 (*.exe)|*.exe", CheckFileExists = true, Title = "重新选择游戏启动文件" };
+        if (dialog.ShowDialog(this) == true) SelectExecutable(dialog.FileName);
+    }
+    public bool SelectExecutable(string path)
+    {
+        if (!File.Exists(path) || !string.Equals(Path.GetExtension(path), ".exe", StringComparison.OrdinalIgnoreCase))
+        { ErrorText.Text = "请选择有效的游戏 EXE 文件。"; return false; }
+        if (_isDuplicate(path)) { ErrorText.Text = "该启动文件已属于库中的其他游戏。"; return false; }
+        ExecutableBox.Text = Path.GetFullPath(path);
+        WorkingDirectoryBox.Text = Path.GetDirectoryName(ExecutableBox.Text)!;
+        ErrorText.Text = ""; return true;
+    }
     private void ChooseCover_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new Microsoft.Win32.OpenFileDialog
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif", CheckFileExists = true, Title = "选择游戏封面" };
+        if (dialog.ShowDialog(this) == true)
         {
-            Filter = "图片文件 (*.png;*.jpg;*.jpeg;*.webp)|*.png;*.jpg;*.jpeg;*.webp|所有文件 (*.*)|*.*",
-            CheckFileExists = true,
-            Multiselect = false,
-            Title = "选择游戏封面"
-        };
-
-        if (dialog.ShowDialog(this) == true) CoverBox.Text = dialog.FileName;
+            try { _ = GameImageLoader.Load(dialog.FileName); CoverBox.Text = dialog.FileName; UpdatePreview(); ErrorText.Text = ""; }
+            catch (Exception ex) when (GameImageLoader.IsImageError(ex)) { ErrorText.Text = "图片无法读取或过大，请重新选择。"; }
+        }
     }
+    private void CoverBox_LostFocus(object sender, RoutedEventArgs e) => UpdatePreview();
+    private void UpdatePreview() => CoverPreview.Source = _cover.Convert(CoverBox.Text, typeof(ImageSource), null, CultureInfo.CurrentCulture) as ImageSource;
+    private void Save_Click(object sender, RoutedEventArgs e) { if (TryApply()) DialogResult = true; }
 
-    private void Save_Click(object sender, RoutedEventArgs e)
+    public bool TryApply()
     {
-        if (string.IsNullOrWhiteSpace(TitleBox.Text))
+        try
         {
-            System.Windows.MessageBox.Show(this, "标题不能为空。", "无法保存", MessageBoxButton.OK, MessageBoxImage.Warning);
-            TitleBox.Focus();
-            return;
+            if (string.IsNullOrWhiteSpace(TitleBox.Text)) { ErrorText.Text = "标题不能为空。"; TitleBox.Focus(); return false; }
+            if (!Directory.Exists(WorkingDirectoryBox.Text.Trim())) { ErrorText.Text = "工作目录不存在，请重新选择启动文件或修改目录。"; return false; }
+            if (!string.Equals(ExecutableBox.Text, _game.ExecutablePath, StringComparison.OrdinalIgnoreCase) && !File.Exists(ExecutableBox.Text))
+            { ErrorText.Text = "重新选择的启动文件已不存在。"; return false; }
+            if (_isDuplicate(ExecutableBox.Text)) { ErrorText.Text = "这个启动文件已属于另一个游戏。"; return false; }
+            if (!string.IsNullOrWhiteSpace(CoverBox.Text)) _ = GameImageLoader.Load(CoverBox.Text.Trim());
+            int? year = null;
+            if (!string.IsNullOrWhiteSpace(YearBox.Text))
+            {
+                if (!int.TryParse(YearBox.Text, out var parsed) || parsed < 1900 || parsed > DateTime.Now.Year + 10)
+                { ErrorText.Text = "请填写有效的四位发行年份，或留空。"; return false; }
+                year = parsed;
+            }
+            var newExe = Path.GetFullPath(ExecutableBox.Text);
+            var changed = !string.Equals(newExe, _game.ExecutablePath, StringComparison.OrdinalIgnoreCase);
+            _game.Title = TitleBox.Text.Trim(); _game.Engine = EngineBox.Text.Trim(); _game.ReleaseYear = year;
+            _game.ExecutablePath = newExe;
+            if (changed) _game.RootPath = Path.GetDirectoryName(newExe)!;
+            _game.WorkingDirectory = Path.GetFullPath(WorkingDirectoryBox.Text.Trim());
+            _game.LaunchArguments = ArgumentsBox.Text;
+            _game.CoverPath = string.IsNullOrWhiteSpace(CoverBox.Text) ? null : Path.GetFullPath(CoverBox.Text.Trim());
+            _game.Description = DescriptionBox.Text.Trim();
+            _game.RefreshAvailability();
+            ErrorText.Text = ""; return true;
         }
-
-        if (!Directory.Exists(WorkingDirectoryBox.Text))
-        {
-            System.Windows.MessageBox.Show(this, "工作目录不存在，请重新选择或修改。", "无法保存", MessageBoxButton.OK, MessageBoxImage.Warning);
-            WorkingDirectoryBox.Focus();
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(CoverBox.Text) && !File.Exists(CoverBox.Text))
-        {
-            System.Windows.MessageBox.Show(this, "封面文件不存在，请重新选择。", "无法保存", MessageBoxButton.OK, MessageBoxImage.Warning);
-            CoverBox.Focus();
-            return;
-        }
-
-        int? year = null;
-        if (!string.IsNullOrWhiteSpace(YearBox.Text) && !int.TryParse(YearBox.Text, out var parsedYear))
-        {
-            System.Windows.MessageBox.Show(this, "年份必须是数字。", "无法保存", MessageBoxButton.OK, MessageBoxImage.Warning);
-            YearBox.Focus();
-            return;
-        }
-        else if (int.TryParse(YearBox.Text, out parsedYear))
-        {
-            year = parsedYear;
-        }
-
-        _game.Title = TitleBox.Text.Trim();
-        _game.Engine = EngineBox.Text.Trim();
-        _game.ReleaseYear = year;
-        _game.WorkingDirectory = WorkingDirectoryBox.Text.Trim();
-        _game.LaunchArguments = ArgumentsBox.Text;
-        _game.CoverPath = string.IsNullOrWhiteSpace(CoverBox.Text) ? null : CoverBox.Text.Trim();
-        _game.Description = DescriptionBox.Text.Trim();
-        DialogResult = true;
+        catch (Exception ex) when (GameImageLoader.IsImageError(ex))
+        { ErrorText.Text = "路径或封面无效，图片可能已损坏或超过大小限制。请检查后重试。"; return false; }
     }
 }

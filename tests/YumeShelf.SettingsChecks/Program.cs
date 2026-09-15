@@ -16,6 +16,7 @@ internal static partial class Program
     {
         var output = Path.Combine(AppContext.BaseDirectory, "test-artifacts", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(output);
+        AppLog.DirectoryPath = Path.Combine(output, "logs");
         // Load production resources without running its StartupUri against the user's library.
         var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/YumeShelf;component/Resources/Colors.xaml", UriKind.Relative) });
@@ -72,7 +73,7 @@ internal static partial class Program
             reopened.SelectBackground(corruptPath);
             Check(reopened.HasBackground && reopened.ErrorMessage.Length > 0, "invalid image preserves previous preview");
             reopened.ClearBackgroundCommand.Execute(null);
-            Check(!reopened.HasBackground && store.Load().BackgroundImagePath == imagePath, "clear waits for confirmation");
+            Check(!reopened.HasCustomBackground && reopened.HasBackground && store.Load().BackgroundImagePath == imagePath, "clear previews the default and waits for confirmation");
             reopened.ConfirmCommand.Execute(null);
             Check(store.Load().BackgroundImagePath is null, "confirmed clear persists");
 

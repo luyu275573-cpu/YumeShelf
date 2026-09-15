@@ -1,138 +1,137 @@
+using System.Collections;
+using System.Diagnostics;
 using System.IO;
+using YumeShelf.Common;
+using YumeShelf.Infrastructure;
 
 namespace YumeShelf.Application;
 
-public sealed record GameScanCandidate(string ExecutablePath, string Title, string Engine, string Reason, int Score)
+public sealed class GameScanCandidate(string executablePath, string title, string engine, string reason, int score) : ObservableObject
 {
-    public bool IsSelected { get; set; } = true;
+    private bool _isSelected = true;
+    public string ExecutablePath { get; } = executablePath;
+    public string Title { get; } = title;
+    public string Engine { get; } = engine;
+    public string Reason { get; } = reason;
+    public int Score { get; } = score;
+    public bool IsSelected { get => _isSelected; set => SetProperty(ref _isSelected, value); }
+}
+
+public sealed record GameScanResult(IReadOnlyList<GameScanCandidate> Candidates, int VisitedDirectories, int SkippedDirectories, IReadOnlyList<string> Limits) : IReadOnlyList<GameScanCandidate>
+{
+    public bool IsIncomplete => Limits.Count > 0 || SkippedDirectories > 0;
+    public string Summary => $"已检查 {VisitedDirectories} 个目录，发现 {Count} 个候选。"
+        + (IsIncomplete ? $"扫描不完整：{string.Join("；", Limits)}{(SkippedDirectories > 0 ? $"；跳过 {SkippedDirectories} 个无权限或链接目录" : "")}。可缩小范围继续扫描。" : "");
+    public int Count => Candidates.Count;
+    public GameScanCandidate this[int index] => Candidates[index];
+    public IEnumerator<GameScanCandidate> GetEnumerator() => Candidates.GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
 public sealed class GameScanService
 {
-    private static readonly string[] ExcludedNames = ["unins", "uninstall", "setup", "install", "crash", "updater", "update", "launcher", "bhvc", "cfg", "config", "configure", "patch", "patcher", "redist", "vcredist", "dxsetup", "unitycrashhandler", "senddmp"];
-    private static readonly string[] StrongFiles = ["UnityPlayer.dll", "GameAssembly.dll", "data.win", "nw.dll", "package.json", "RPG_RT.exe"];
+    public const int MaxDepth = 12;
+    public const int MaxDirectories = 10000;
+    public const int MaxResults = 500;
+    private const int MaxEntriesPerDirectory = 4096;
+    private static readonly string[] ExcludedNames = ["unins", "uninstall", "setup", "install", "crash", "unitycrashhandler", "updater", "update", "bhvc", "cfg", "config", "configure", "patch", "patcher", "redist", "vcredist", "dxsetup", "senddmp"];
 
-    public Task<IReadOnlyList<GameScanCandidate>> ScanAsync(string root, ISet<string> existingPaths, CancellationToken token = default)
+    public Task<GameScanResult> ScanAsync(string root, ISet<string> existingPaths, CancellationToken token = default)
         => Task.Run(() => Scan(root, existingPaths, token), token);
 
-    private static IReadOnlyList<GameScanCandidate> Scan(string root, ISet<string> existingPaths, CancellationToken token)
+    private static GameScanResult Scan(string root, ISet<string> existingPaths, CancellationToken token)
     {
         var results = new List<GameScanCandidate>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var dirs = new Queue<(string Path, int Depth)>();
-        var visitedDirectories = 0;
-        if (Directory.Exists(root)) dirs.Enqueue((Path.GetFullPath(root), 0));
-        while (dirs.Count > 0 && visitedDirectories++ < 10000 && results.Count < 500)
+        var queue = new Queue<(string Path, int Depth)>();
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var limits = new HashSet<string>();
+        var skipped = 0;
+        var watch = Stopwatch.StartNew();
+        if (!Directory.Exists(root)) throw new DirectoryNotFoundException("搜索目录不存在。");
+        queue.Enqueue((Path.GetFullPath(root), 0));
+        while (queue.Count > 0)
         {
             token.ThrowIfCancellationRequested();
-            var (dir, depth) = dirs.Dequeue();
+            if (visited.Count >= MaxDirectories) { limits.Add($"达到 {MaxDirectories} 个目录上限"); break; }
+            if (results.Count >= MaxResults) { limits.Add($"达到 {MaxResults} 个候选上限"); break; }
+            if (watch.Elapsed > TimeSpan.FromSeconds(60)) { limits.Add("达到 60 秒扫描时限"); break; }
+            var (directory, depth) = queue.Dequeue();
+            if (!visited.Add(directory)) continue;
             try
             {
-                var files = Directory.EnumerateFiles(dir, "*.exe").ToArray();
-                foreach (var file in files)
+                if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) { skipped++; continue; }
+                var entries = Directory.EnumerateFileSystemEntries(directory).Take(MaxEntriesPerDirectory + 1).ToArray();
+                if (entries.Length > MaxEntriesPerDirectory) limits.Add("部分目录超过 4096 个文件，已限制枚举");
+                var engine = DetectEngine(directory);
+                var names = entries.Select(Path.GetFileName).OfType<string>().ToArray();
+                var context = ContextScore(directory, names);
+                var resources = names.Count(IsGameResource);
+                var structuredBinary = engine == "自定义视觉小说引擎";
+                var dedicated = engine is "Ren'Py" or "BGI" or "KiriKiri" or "TyranoScript" || structuredBinary;
+                var candidates = new List<GameScanCandidate>();
+                foreach (var entry in entries.Take(MaxEntriesPerDirectory))
                 {
-                    if (results.Count >= 200) break;
-                    var name = Path.GetFileNameWithoutExtension(file);
-                    if (ExcludedNames.Any(x => name.Contains(x, StringComparison.OrdinalIgnoreCase))) continue;
-                    var full = Path.GetFullPath(file);
-                    if (existingPaths.Contains(full) || !seen.Add(full)) continue;
-                    var (score, engine, reason) = Score(dir, file, name);
-                    if (score >= 2) results.Add(new(full, name, engine, reason, score));
+                    token.ThrowIfCancellationRequested();
+                    if (!string.Equals(Path.GetExtension(entry), ".exe", StringComparison.OrdinalIgnoreCase)) continue;
+                    var name = Path.GetFileNameWithoutExtension(entry);
+                    if (ExcludedNames.Any(x => name.StartsWith(x, StringComparison.OrdinalIgnoreCase)) || existingPaths.Contains(entry)) continue;
+                    if (structuredBinary && !File.Exists(Path.ChangeExtension(entry, ".bin"))) continue;
+                    if (!dedicated && (context < 2 || (engine == "未知引擎" && resources < 3))) continue;
+                    var effectiveEngine = engine == "未知引擎" ? "自定义视觉小说引擎" : engine;
+                    var score = dedicated ? 9 : 5;
+                    var chineseEntry = name.Contains("chs", StringComparison.OrdinalIgnoreCase) || name.Contains("汉化", StringComparison.OrdinalIgnoreCase);
+                    if (chineseEntry) score += 3;
+                    if (engine == "BGI" && name.StartsWith("bgi", StringComparison.OrdinalIgnoreCase)) score += 2;
+                    if (name.Equals("game", StringComparison.OrdinalIgnoreCase) || name.Equals("start", StringComparison.OrdinalIgnoreCase)) score++;
+                    candidates.Add(new(entry, name, effectiveEngine, dedicated ? $"检测到 {engine} 视觉小说结构" : "检测到存档、日文/汉化或视觉小说资源组合，建议核对入口", score));
                 }
-                if (depth < 5)
-                    foreach (var child in Directory.EnumerateDirectories(dir)) dirs.Enqueue((child, depth + 1));
+                // A directory may contain standalone games. Only rank alternative entries for known engines.
+                var accepted = new List<GameScanCandidate>();
+                foreach (var candidate in dedicated && !structuredBinary ? candidates.OrderByDescending(x => x.Score).Take(1) : candidates.OrderByDescending(x => x.Score))
+                {
+                    if (accepted.Any(other => GameIdentity.AreSame(other.ExecutablePath, candidate.ExecutablePath))) continue;
+                    if (results.Count == MaxResults) { limits.Add($"达到 {MaxResults} 个候选上限"); break; }
+                    results.Add(candidate); accepted.Add(candidate);
+                }
+                foreach (var child in entries.Take(MaxEntriesPerDirectory).Where(Directory.Exists))
+                {
+                    if (depth >= MaxDepth) { limits.Add($"达到 {MaxDepth} 层目录深度上限"); break; }
+                    queue.Enqueue((child, depth + 1));
+                }
             }
-            catch (UnauthorizedAccessException) { }
-            catch (IOException) { }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            { skipped++; AppLog.Write("scan.directory-skipped", ex); }
         }
-        return results.GroupBy(x => Path.GetDirectoryName(x.ExecutablePath) ?? x.ExecutablePath, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.OrderByDescending(x => x.Score)
-                .ThenByDescending(x => x.Title.Contains("chs", StringComparison.OrdinalIgnoreCase))
-                .ThenBy(x => x.Title).First())
-            .OrderByDescending(x => x.Score).ThenBy(x => x.Title).ToArray();
+        AppLog.Write("scan.completed");
+        return new(results.OrderByDescending(x => x.Score).ThenBy(x => x.Title).ToArray(), visited.Count, skipped, limits.ToArray());
     }
 
-    private static (int Score, string Engine, string Reason) Score(string dir, string executablePath, string name)
+    public static string DetectEngine(string directory)
     {
-        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        try { foreach (var file in Directory.EnumerateFiles(dir).Take(80)) files.Add(Path.GetFileName(file)); } catch { }
-        var lowerDir = dir.ToLowerInvariant();
-        var stem = Path.GetFileNameWithoutExtension(executablePath);
-        var resourceCount = files.Count(file => IsGameResource(file));
-        var hasMatchingResource = files.Any(file => Path.GetFileNameWithoutExtension(file).Equals(stem, StringComparison.OrdinalIgnoreCase)
-            && !file.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
-        var gameContext = HasGameContext(dir, files, name);
-        var directoryEvidence = GetDirectoryEvidence(dir, files);
-        var (score, engine, reason) = files.Contains("UnityPlayer.dll") || files.Contains("GameAssembly.dll") ? (8, "Unity", "检测到 Unity 游戏组件")
-            : files.Contains("BGI.gdb") || files.Contains("BGI.kdb") || files.Contains("BGI.hvl") || files.Any(x => x.StartsWith("data", StringComparison.OrdinalIgnoreCase) && x.EndsWith(".arc", StringComparison.OrdinalIgnoreCase)) ? (9, "BGI", "检测到 BGI 游戏数据库和 ARC 资源")
-            : files.Contains("data.win") ? (8, "GameMaker", "检测到 data.win 资源")
-            : files.Contains("RPG_RT.exe") ? (8, "RPG Maker", "检测到 RPG Maker 运行文件")
-            : files.Any(x => x.EndsWith(".xp3", StringComparison.OrdinalIgnoreCase)) ? (8, "KiriKiri", "检测到 XP3 资源包")
-            : files.Any(x => x.EndsWith(".ks", StringComparison.OrdinalIgnoreCase)) || lowerDir.Contains("tyranoscript") ? (7, "TyranoScript", "检测到视觉小说脚本资源")
-            : files.Contains("nw.dll") && files.Contains("package.json") ? (7, "NW.js", "检测到 NW.js 游戏组件")
-            : hasMatchingResource && resourceCount >= 3 && gameContext ? (5, "自定义视觉小说引擎", "检测到与启动文件同名的游戏资源")
-            : (0, "未知引擎", "");
-        var hints = new List<string>();
-        var lowerName = name.ToLowerInvariant();
-        if (lowerName is "game" or "start" or "play" or "main" || lowerName.EndsWith("_chs") || lowerName.EndsWith("chs")) { score += 2; hints.Add("启动文件名称符合游戏入口特征"); }
-        if (hasMatchingResource && resourceCount >= 3) { score += 2; hints.Add("启动文件存在同名资源文件"); }
-        foreach (var evidence in directoryEvidence)
-        {
-            score += 1;
-            hints.Add(evidence);
-        }
-        if (engine == "BGI" && (lowerName == "bgi" || lowerName.Contains("bgi") || lowerName.Contains("chs"))) { score += 2; hints.Add("优先识别 BGI 主启动文件"); }
-        try
-        {
-            var length = new FileInfo(executablePath).Length;
-            if (length >= 256 * 1024) { score++; hints.Add("启动文件体积符合游戏程序特征"); }
-        }
-        catch (IOException) { }
-        if (hints.Count > 0) reason = string.IsNullOrWhiteSpace(reason) ? string.Join("；", hints) : reason + "；" + string.Join("；", hints);
-        if (name.Contains("game", StringComparison.OrdinalIgnoreCase) || name.Contains("novel", StringComparison.OrdinalIgnoreCase) || name.Contains("visual", StringComparison.OrdinalIgnoreCase) || name.Contains("story", StringComparison.OrdinalIgnoreCase)) score++;
-        if (lowerDir.Contains("galgame") || lowerDir.Contains("visual novel") || lowerDir.Contains("\u89c6\u89c9\u5c0f\u8bf4")) score++;
-        if (score > 0 && string.IsNullOrWhiteSpace(reason)) reason = "名称或目录符合视觉小说特征";
-        if (engine == "未知引擎" && !gameContext) return (0, engine, string.Empty);
-        return (score, engine, reason);
+        bool Has(string file) => File.Exists(Path.Combine(directory, file));
+        bool Any(string pattern) => Directory.EnumerateFiles(directory, pattern, SearchOption.TopDirectoryOnly).Any();
+        if (Directory.Exists(Path.Combine(directory, "renpy")) && Directory.Exists(Path.Combine(directory, "game"))) return "Ren'Py";
+        if (Has("BGI.gdb") || Has("BGI.kdb") || Has("BGI.hvl") || Any("data*.arc")) return "BGI";
+        if (Any("*.xp3")) return "KiriKiri";
+        if (Any("*.ks") || Directory.Exists(Path.Combine(directory, "tyrano")) || Directory.Exists(Path.Combine(directory, "data", "scenario"))) return "TyranoScript";
+        if (Has("script.bin") && Has("bg.bin") && (Has("voc.bin") || Has("snd.bin"))) return "自定义视觉小说引擎";
+        if (Has("UnityPlayer.dll") || Has("GameAssembly.dll")) return "Unity";
+        if (Has("data.win")) return "GameMaker";
+        if (Has("RPG_RT.exe")) return "RPG Maker";
+        if (Has("nw.dll") && Has("package.json")) return "NW.js";
+        return "未知引擎";
     }
 
-    private static bool HasGameContext(string dir, HashSet<string> files, string name)
+    private static int ContextScore(string directory, IReadOnlyList<string> names)
     {
-        var currentDirectoryName = Path.GetFileName(dir);
-        return ContainsJapaneseText(currentDirectoryName)
-            || name.EndsWith("chs", StringComparison.OrdinalIgnoreCase)
-            || files.Any(x => x.Contains("savedata", StringComparison.OrdinalIgnoreCase)
-                || x.Contains("汉化", StringComparison.OrdinalIgnoreCase)
-                || x.Contains("中文", StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static IReadOnlyList<string> GetDirectoryEvidence(string dir, HashSet<string> files)
-    {
-        var evidence = new List<string>();
-        var names = new List<string>(files);
-        try
-        {
-            names.AddRange(Directory.EnumerateDirectories(dir).Take(40).Select(Path.GetFileName).Where(x => !string.IsNullOrWhiteSpace(x))!);
-        }
-        catch (UnauthorizedAccessException) { }
-        catch (IOException) { }
-
-        if (names.Any(x => x.Contains("savedata", StringComparison.OrdinalIgnoreCase) || x.Contains("save data", StringComparison.OrdinalIgnoreCase)))
-            evidence.Add("检测到游戏存档目录");
-        if (names.Any(x => x.Contains("汉化", StringComparison.OrdinalIgnoreCase) || x.Contains("中文", StringComparison.OrdinalIgnoreCase) || x.Contains("chs", StringComparison.OrdinalIgnoreCase)))
-            evidence.Add("检测到汉化或中文资源标记");
-        var currentDirectoryName = Path.GetFileName(dir);
-        if (ContainsJapaneseText(currentDirectoryName))
-            evidence.Add("目录或文件名包含日文字符");
-        if (files.Count(IsGameResource) >= 3)
-            evidence.Add("检测到视觉小说常见资源文件");
-        return evidence;
+        var score = 0;
+        if (names.Any(x => x.Contains("savedata", StringComparison.OrdinalIgnoreCase) || x.Equals("save", StringComparison.OrdinalIgnoreCase))) score++;
+        if (names.Any(x => x.Contains("汉化") || x.Contains("中文") || x.Contains("chs", StringComparison.OrdinalIgnoreCase))) score++;
+        if (Path.GetFileName(directory).Any(c => c is >= '\u3040' and <= '\u30ff') || names.Any(x => x.Any(c => c is >= '\u3040' and <= '\u30ff'))) score++;
+        if (directory.Contains("visual novel", StringComparison.OrdinalIgnoreCase) || Path.GetFileName(directory).Contains("galgame", StringComparison.OrdinalIgnoreCase)) score++;
+        return score;
     }
 
     private static bool IsGameResource(string file)
-        => file.EndsWith(".arc", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".bin", StringComparison.OrdinalIgnoreCase)
-            || file.EndsWith(".pak", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".dat", StringComparison.OrdinalIgnoreCase);
-
-    private static bool ContainsJapaneseText(string? value)
-        => value is not null && value.Any(ch => ch >= '\u3040' && ch <= '\u30ff');
+        => Path.GetExtension(file).ToLowerInvariant() is ".arc" or ".bin" or ".pak" or ".dat";
 }

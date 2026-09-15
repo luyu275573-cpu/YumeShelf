@@ -20,6 +20,7 @@
                                 <StackPanel>
                                     <TextBlock Text="{Binding RoleLabel}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11"/>
                                     <TextBox Text="{Binding Content, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Padding="0" Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,6,0,0" AutomationProperties.Name="对话消息"/>
+                                    <TextBlock Text="{Binding State}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,5,0,0"/>
                                 </StackPanel>
                             </Border>
                         </DataTemplate>
@@ -28,14 +29,15 @@
             </ScrollViewer>
         </Border>
         <TextBox Grid.Row="2" x:Name="QueryEditor" Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}"
-                 IsReadOnly="{Binding IsBusy}" Style="{StaticResource EditorTextBox}" AcceptsReturn="True"
+                 IsReadOnly="{Binding IsBusy}" Style="{StaticResource EditorTextBox}" AcceptsReturn="True" MaxLength="6000"
                  TextWrapping="Wrap" MinHeight="82" MaxHeight="140" VerticalScrollBarVisibility="Auto"
-                 Margin="0,16,0,12" AutomationProperties.Name="向 Yume 提问" ToolTip="输入 Galgame 问题，点击发送"/>
+                 Margin="0,16,0,12" AutomationProperties.Name="向 Yume 提问" ToolTip="Enter 发送，Shift+Enter 换行；最多 6000 字符"/>
         <Grid Grid.Row="3">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBlock Text="{Binding Status}" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center"
                        TextWrapping="Wrap" MaxHeight="44" TextTrimming="CharacterEllipsis" ToolTip="{Binding Status}" Margin="0,0,16,0"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <TextBlock Text="{Binding QueryCount}" Foreground="{DynamicResource MutedTextBrush}" FontSize="10" VerticalAlignment="Center" Margin="0,0,12,0"/>
                 <Button Content="停止" Command="{Binding CancelCommand}" Style="{StaticResource SecondaryButton}" Margin="0,0,10,0"/>
                 <Button Content="发送" Command="{Binding SendCommand}" Style="{StaticResource PrimaryButton}" MinWidth="76"/>
             </StackPanel>

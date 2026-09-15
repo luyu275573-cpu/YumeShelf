@@ -19,6 +19,7 @@ public sealed class SettingsViewModel : ObservableObject
     private string _aiApiKey = string.Empty;
     private bool _isAiTesting;
     private CancellationTokenSource? _testCancellation;
+    private string? _credentialOrigin;
 
     public SettingsViewModel(AppSettings settings, Action<AppSettings> apply, OperationFeedback? feedback = null)
     {
@@ -29,6 +30,7 @@ public sealed class SettingsViewModel : ObservableObject
         ConfirmCommand = new RelayCommand(_ => Confirm());
         CancelCommand = new RelayCommand(_ => { CloseRequested?.Invoke(false); Feedback.Show("已取消本次修改，恢复为已保存的设置。", FeedbackKind.Info); });
         _aiApiKey = SecureSecretStore.Unprotect(_draft.AiApiKeyProtected);
+        _credentialOrigin = Origin(_draft.AiApiBaseUrl);
         TestAiConnectionCommand = new RelayCommand(_ => _ = TestAiConnectionAsync(), _ => !IsAiTesting);
         TestAiModelCommand = new RelayCommand(_ => _ = TestAiModelAsync(), _ => !IsAiTesting);
         try { PreviewImage = BackgroundImageLoader.Load(_draft.BackgroundImagePath ?? BuiltInBackgrounds.Resolve(_draft.ColorPalette, _draft.NightMode)); }
@@ -49,8 +51,7 @@ public sealed class SettingsViewModel : ObservableObject
     public OperationFeedback Feedback { get; }
     public string SaveNotice { get => _saveNotice; set => SetProperty(ref _saveNotice, value); }
     public IReadOnlyList<string> Sections { get; } = ["应用美化", "AI 检索", "页面分栏"];
-    public IReadOnlyList<string> ColorPalettes { get; } = ["樱粉色", "浅蓝色", "淡黄色", "跟随壁纸配色"];
-    public IReadOnlyList<string> AvailableColorPalettes => HasBackground ? ColorPalettes : ColorPalettes.Take(3).ToArray();
+    // ColorPalette remains only to load existing built-in background choices from older settings.
     public string ColorPalette { get => _draft.ColorPalette; set { _draft = _draft with { ColorPalette = value }; RefreshPreview(); OnPropertyChanged(); } }
     public bool NightMode { get => _draft.NightMode; set { _draft = _draft with { NightMode = value }; RefreshPreview(); OnPropertyChanged(); } }
     public AppSettings DraftSettings => _draft;
@@ -60,10 +61,30 @@ public sealed class SettingsViewModel : ObservableObject
     public bool HasBackground => PreviewImage is not null;
     public bool HasCustomBackground => !string.IsNullOrWhiteSpace(_draft.BackgroundImagePath);
     public string ErrorMessage { get => _errorMessage; private set => SetProperty(ref _errorMessage, value); }
-    public string AiApiBaseUrl { get => _draft.AiApiBaseUrl; set { _draft = _draft with { AiApiBaseUrl = value }; OnPropertyChanged(); } }
+    public string AiApiBaseUrl
+    {
+        get => _draft.AiApiBaseUrl;
+        set
+        {
+            if (_draft.AiApiBaseUrl == value) return;
+            _draft = _draft with { AiApiBaseUrl = value };
+            var origin = Origin(value);
+            if (origin is not null && origin != _credentialOrigin && _aiApiKey.Length > 0)
+            {
+                CancelPendingTest();
+                _aiApiKey = string.Empty;
+                OnPropertyChanged(nameof(AiApiKey));
+                AiStatus = "服务地址已更改，请重新填写该服务的 API Key。";
+                OnPropertyChanged(nameof(AiStatus));
+                Feedback.Show(AiStatus, FeedbackKind.Warning);
+            }
+            if (origin is not null) _credentialOrigin = origin;
+            OnPropertyChanged();
+        }
+    }
     public string AiModel { get => _draft.AiModel; set { _draft = _draft with { AiModel = value }; OnPropertyChanged(); } }
     public int AiTimeoutSeconds { get => _draft.AiTimeoutSeconds; set { _draft = _draft with { AiTimeoutSeconds = value }; OnPropertyChanged(); } }
-    public string AiApiKey { get => _aiApiKey; set { _aiApiKey = value; OnPropertyChanged(); } }
+    public string AiApiKey { get => _aiApiKey; set { if (SetProperty(ref _aiApiKey, value)) _credentialOrigin = Origin(AiApiBaseUrl); } }
     public string AiStatus { get; private set; } = "尚未测试连接";
     public bool IsAiTesting { get => _isAiTesting; private set { if (SetProperty(ref _isAiTesting, value)) { TestAiModelCommand.RaiseCanExecuteChanged(); TestAiConnectionCommand.RaiseCanExecuteChanged(); } } }
     public double BackgroundOpacity
@@ -103,9 +124,6 @@ public sealed class SettingsViewModel : ObservableObject
             OnPropertyChanged(nameof(BackgroundFileName));
             ErrorMessage = string.Empty;
             Feedback.Show("已选择背景图片；点击“确认并保存”后应用。", FeedbackKind.Info);
-            OnPropertyChanged(nameof(CanFollowWallpaper));
-            OnPropertyChanged(nameof(AvailableColorPalettes));
-            OnPropertyChanged(nameof(AvailableColorPalettes));
         }
         catch (Exception exception) when (IsImageError(exception))
         {
@@ -117,16 +135,12 @@ public sealed class SettingsViewModel : ObservableObject
     private void ClearBackground()
     {
         _draft = _draft with { BackgroundImagePath = null };
-        PreviewImage = null;
+        RefreshPreview();
         OnPropertyChanged(nameof(BackgroundFileName));
         ErrorMessage = string.Empty;
         if (ColorPalette == "跟随壁纸配色") ColorPalette = "樱粉色";
-        OnPropertyChanged(nameof(CanFollowWallpaper));
-        OnPropertyChanged(nameof(AvailableColorPalettes));
         Feedback.Show("已预览默认背景；点击“确认并保存”后应用。", FeedbackKind.Info);
-        OnPropertyChanged(nameof(AvailableColorPalettes));
     }
-    public bool CanFollowWallpaper => HasCustomBackground;
     private void RefreshPreview()
     {
         if (HasCustomBackground) return;
@@ -138,6 +152,8 @@ public sealed class SettingsViewModel : ObservableObject
     {
         try
         {
+            OpenAiCompatibleProvider.ValidateConfiguration(AiApiBaseUrl, AiModel);
+            if (AiTimeoutSeconds is < 5 or > 120) throw new AiConfigurationException("超时时间必须为 5–120 秒。配置尚未保存。");
             // Reload before saving: a selected file may have moved since preview.
             _ = BackgroundImageLoader.Load(_draft.BackgroundImagePath);
             _apply(_draft with { AiApiKeyProtected = SecureSecretStore.Protect(_aiApiKey) });
@@ -146,8 +162,15 @@ public sealed class SettingsViewModel : ObservableObject
             Feedback.Show("设置已保存并应用。", FeedbackKind.Success);
             CloseRequested?.Invoke(true);
         }
+        catch (AiConfigurationException exception)
+        {
+            ErrorMessage = exception.Message;
+            SaveNotice = "保存失败，请检查 AI 配置";
+            Feedback.Show(ErrorMessage, FeedbackKind.Error);
+        }
         catch (Exception exception) when (IsImageError(exception) || exception is System.Security.Cryptography.CryptographicException)
         {
+            AppLog.Write("settings.save-failed", exception);
             ErrorMessage = "设置未保存。请确认背景图片仍可读取，且应用数据目录可写，再重试。";
             SaveNotice = "保存失败，修改尚未应用";
             Feedback.Show(ErrorMessage, FeedbackKind.Error);
@@ -170,7 +193,8 @@ public sealed class SettingsViewModel : ObservableObject
         }
         catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or InvalidOperationException or UriFormatException or System.Text.Json.JsonException)
         {
-            AiStatus = exception is OperationCanceledException ? "服务检查已停止或超时，请重试。" : "服务检查失败，请检查 API 地址、Key 和网络连接。";
+            AppLog.Write("ai.service-test-failed", exception);
+            AiStatus = exception is OperationCanceledException ? "服务检查已停止或超时，请重试。" : exception is InvalidOperationException ? exception.Message : "服务检查失败，请检查 API 地址、Key 和网络连接。";
             if (!cancellation.IsCancellationRequested) Feedback.Show(AiStatus, FeedbackKind.Error);
         }
         finally { _testCancellation = null; IsAiTesting = false; OnPropertyChanged(nameof(AiStatus)); }
@@ -186,21 +210,21 @@ public sealed class SettingsViewModel : ObservableObject
         _testCancellation = cancellation;
         try
         {
-            var response = await new OpenAiCompatibleProvider().TestModelAsync(AiApiBaseUrl, AiApiKey, AiModel, TimeSpan.FromSeconds(Math.Clamp(AiTimeoutSeconds, 5, 120)), cancellation.Token);
+            await new OpenAiCompatibleProvider().TestModelAsync(AiApiBaseUrl, AiApiKey, AiModel, TimeSpan.FromSeconds(Math.Clamp(AiTimeoutSeconds, 5, 120)), cancellation.Token);
             AiStatus = "模型回答测试成功，所填模型可以生成内容。";
             if (!cancellation.IsCancellationRequested) Feedback.Show(AiStatus);
         }
         catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or InvalidOperationException or UriFormatException or System.Text.Json.JsonException)
         {
-            AiStatus = exception is OperationCanceledException ? "模型测试已停止或超时，请重试。" : "模型测试失败，请检查模型名称、服务权限和网络连接。";
+            AppLog.Write("ai.model-test-failed", exception);
+            AiStatus = exception is OperationCanceledException ? "模型测试已停止或超时，请重试。" : exception is InvalidOperationException ? exception.Message : "模型测试失败，请检查模型名称、服务权限和网络连接。";
             if (!cancellation.IsCancellationRequested) Feedback.Show(AiStatus, FeedbackKind.Error);
         }
         finally { _testCancellation = null; IsAiTesting = false; OnPropertyChanged(nameof(AiStatus)); }
     }
 
     public void CancelPendingTest() => _testCancellation?.Cancel();
+    private static string? Origin(string value) => Uri.TryCreate(value, UriKind.Absolute, out var uri) ? uri.GetLeftPart(UriPartial.Authority).ToLowerInvariant() : null;
 
-    private static bool IsImageError(Exception exception) => exception is IOException or UnauthorizedAccessException
-        or NotSupportedException or ArgumentException or InvalidOperationException
-        or System.Runtime.InteropServices.COMException;
+    private static bool IsImageError(Exception exception) => GameImageLoader.IsImageError(exception);
 }

@@ -10,6 +10,7 @@ using Microsoft.Win32;
 using YumeShelf.Application;
 using YumeShelf.Common;
 using YumeShelf.Domain;
+using YumeShelf.Infrastructure;
 
 namespace YumeShelf.Presentation;
 
@@ -33,6 +34,11 @@ public sealed class MainWindowViewModel : ObservableObject
     private SettingsViewModel? _settingsEditor;
     private AiAssistantViewModel? _aiAssistant;
     private bool _hasUnsavedLibraryChanges;
+    private string _selectedSort = "添加时间";
+    private bool _isImporting;
+    public const int PageSize = 60;
+    private int _pageIndex;
+    private bool _changingPage;
 
     public MainWindowViewModel()
         : this(new GameLibraryService(new Infrastructure.JsonGameStore()), new GameLaunchService(), new Infrastructure.AppSettingsStore())
@@ -47,22 +53,20 @@ public sealed class MainWindowViewModel : ObservableObject
         ApplyAppearance(_settingsStore.Load());
 
         var loadedGames = _libraryService.Load();
-        var uniqueGames = DeduplicateGames(loadedGames);
-        Games = new ObservableCollection<Game>(uniqueGames);
-        Games.CollectionChanged += (_, _) =>
-        {
-            OnPropertyChanged(nameof(LibrarySummary));
-            RefreshView();
-        };
+        Games = new ObservableCollection<Game>(loadedGames);
         GamesView = CollectionViewSource.GetDefaultView(Games);
         GamesView.Filter = FilterGame;
         GamesView.SortDescriptions.Add(new SortDescription(nameof(Game.AddedAt), ListSortDirection.Descending));
+        // The view processes the collection notification first; never Refresh during that event.
+        GamesView.CollectionChanged += (_, _) => UpdateCounts();
 
         FilterOptions = ["全部类型", "已收藏", "最近游玩"];
         NavigateCommand = new RelayCommand(parameter => Navigate(parameter as string));
         AddGameCommand = new RelayCommand(_ => AddGame());
         RefreshLibraryCommand = new RelayCommand(_ => RefreshLibrary());
         RetrySaveCommand = new RelayCommand(_ => { if (SaveGames()) Notify("游戏库已重新保存。所有待保存修改已写入本机。"); }, _ => HasUnsavedLibraryChanges);
+        RecoverLibraryCommand = new RelayCommand(_ => RecoverLibrary());
+        OpenDataFolderCommand = new RelayCommand(_ => OpenDataFolder());
         LaunchGameCommand = new RelayCommand(_ => LaunchSelectedGame(), _ => HasSelectedGame);
         EditGameCommand = new RelayCommand(EditSelectedGame, parameter => parameter is Game || HasSelectedGame);
         ToggleFavoriteCommand = new RelayCommand(_ => ToggleFavorite(), _ => HasSelectedGame);
@@ -71,14 +75,23 @@ public sealed class MainWindowViewModel : ObservableObject
         OpenSettingsCommand = new RelayCommand(_ => Navigate("Settings"));
         OpenAiAssistantCommand = new RelayCommand(_ => Navigate("AI"));
         ClearSearchCommand = new RelayCommand(_ => SearchText = string.Empty, _ => HasSearchText);
+        PreviousPageCommand = new RelayCommand(_ => ChangePage(-1), _ => _pageIndex > 0);
+        NextPageCommand = new RelayCommand(_ => ChangePage(1), _ => _pageIndex + 1 < PageCount);
 
-        if (uniqueGames.Count != loadedGames.Count) SaveGames();
+        foreach (var game in Games.Where(g => g.LastLaunchStatus == "Running")) game.LastLaunchStatus = "Interrupted";
+        if (_libraryService.ReadError is not null) ShowLibraryReadError();
         RefreshView();
     }
 
     public ObservableCollection<Game> Games { get; }
     public RelayCommand OpenAiAssistantCommand { get; }
     public ICollectionView GamesView { get; }
+    public IReadOnlyList<Game> VisibleGames { get; private set; } = [];
+    public int PageCount => Math.Max(1, (_filteredCount + PageSize - 1) / PageSize);
+    public bool HasMultiplePages => PageCount > 1;
+    public string PageSummary => $"第 {_pageIndex + 1} / {PageCount} 页";
+    public RelayCommand PreviousPageCommand { get; }
+    public RelayCommand NextPageCommand { get; }
     public IReadOnlyList<string> FilterOptions { get; }
     public string ActiveNavigation { get => _activeNavigation; private set => SetProperty(ref _activeNavigation, value); }
     public SettingsViewModel SettingsEditor => _settingsEditor ??= CreateSettingsEditor();
@@ -86,13 +99,43 @@ public sealed class MainWindowViewModel : ObservableObject
     public OperationFeedback Feedback { get; } = new();
     public bool HasUnsavedLibraryChanges { get => _hasUnsavedLibraryChanges; private set { SetProperty(ref _hasUnsavedLibraryChanges, value); RetrySaveCommand?.RaiseCanExecuteChanged(); } }
     public RelayCommand RetrySaveCommand { get; }
+    public RelayCommand RecoverLibraryCommand { get; }
+    public RelayCommand OpenDataFolderCommand { get; }
+    public bool IsLibraryReadOnly => _libraryService.IsReadOnly;
+    public bool IsImporting { get => _isImporting; private set => SetProperty(ref _isImporting, value); }
+    public IReadOnlyList<string> SortOptions { get; } = ["添加时间", "游戏名称", "最近游玩"];
+    public string SelectedSort
+    {
+        get => _selectedSort;
+        set
+        {
+            if (!SetProperty(ref _selectedSort, value)) return;
+            _pageIndex = 0;
+            using (GamesView.DeferRefresh())
+            {
+                GamesView.SortDescriptions.Clear();
+                GamesView.SortDescriptions.Add(value switch
+                {
+                    "游戏名称" => new SortDescription(nameof(Game.Title), ListSortDirection.Ascending),
+                    "最近游玩" => new SortDescription(nameof(Game.LastPlayedAt), ListSortDirection.Descending),
+                    _ => new SortDescription(nameof(Game.AddedAt), ListSortDirection.Descending)
+                });
+            }
+        }
+    }
 
     public Game? SelectedGame
     {
         get => _selectedGame;
         set
         {
+            if (_changingPage) return;
             if (!SetProperty(ref _selectedGame, value)) return;
+            if (value is not null && !VisibleGames.Contains(value))
+            {
+                var index = GamesView.Cast<Game>().ToList().IndexOf(value);
+                if (index >= 0) { _pageIndex = index / PageSize; RefreshPage(); }
+            }
             OnPropertyChanged(nameof(HasSelectedGame));
             OnPropertyChanged(nameof(FavoriteGlyph));
             RaiseCommandStates();
@@ -105,6 +148,7 @@ public sealed class MainWindowViewModel : ObservableObject
         set
         {
             if (!SetProperty(ref _searchText, value)) return;
+            _pageIndex = 0;
             OnPropertyChanged(nameof(HasSearchText));
             RefreshView();
         }
@@ -117,7 +161,7 @@ public sealed class MainWindowViewModel : ObservableObject
         get => _selectedFilter;
         set
         {
-            if (SetProperty(ref _selectedFilter, value)) RefreshView();
+            if (SetProperty(ref _selectedFilter, value)) { _pageIndex = 0; RefreshView(); }
         }
     }
 
@@ -175,7 +219,7 @@ public sealed class MainWindowViewModel : ObservableObject
         _settings = settings;
         ThemePalette.Apply(System.Windows.Application.Current.Resources, settings);
         try { BackgroundImage = BackgroundImageLoader.Load(settings.BackgroundImagePath ?? BuiltInBackgrounds.Resolve(settings.ColorPalette, settings.NightMode)); }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException
             or NotSupportedException or ArgumentException or InvalidOperationException
             or System.Runtime.InteropServices.COMException)
         {
@@ -261,14 +305,47 @@ public sealed class MainWindowViewModel : ObservableObject
     private void RefreshView()
     {
         GamesView.Refresh();
+        foreach (var game in Games) game.RefreshAvailability();
+        UpdateCounts();
+        ClearSearchCommand.RaiseCanExecuteChanged();
+    }
+
+    private void UpdateCounts()
+    {
+        OnPropertyChanged(nameof(LibrarySummary));
         _filteredCount = GamesView.Cast<Game>().Count();
         OnPropertyChanged(nameof(HasFilteredGames));
-        ClearSearchCommand.RaiseCanExecuteChanged();
+        RefreshPage();
+    }
+
+    private void RefreshPage()
+    {
+        _pageIndex = Math.Clamp(_pageIndex, 0, PageCount - 1);
+        // Bound WPF visual creation without a custom virtualizing panel or new dependency.
+        _changingPage = true;
+        try
+        {
+            VisibleGames = GamesView.Cast<Game>().Skip(_pageIndex * PageSize).Take(PageSize).ToArray();
+            OnPropertyChanged(nameof(VisibleGames));
+        }
+        finally { _changingPage = false; }
+        OnPropertyChanged(nameof(SelectedGame));
+        OnPropertyChanged(nameof(HasMultiplePages));
+        OnPropertyChanged(nameof(PageSummary));
+        PreviousPageCommand?.RaiseCanExecuteChanged(); NextPageCommand?.RaiseCanExecuteChanged();
+    }
+
+    private void ChangePage(int offset)
+    {
+        _pageIndex = Math.Clamp(_pageIndex + offset, 0, PageCount - 1);
+        RefreshPage();
+        SelectedGame = VisibleGames.FirstOrDefault();
     }
 
     private void AddGame()
     {
-        var dialog = new AddGameWindow(AddGameFromPath) { Owner = System.Windows.Application.Current.MainWindow };
+        if (IsLibraryReadOnly) { ShowLibraryReadError(); return; }
+        var dialog = new AddGameWindow(AddGameFromPath, AddGamesAsync) { Owner = System.Windows.Application.Current.MainWindow };
         dialog.ShowDialog();
         if (dialog.ResultMessage is not null) Notify(dialog.ResultMessage, dialog.ResultKind);
     }
@@ -282,59 +359,88 @@ public sealed class MainWindowViewModel : ObservableObject
         }
         try
         {
-            var selectedPath = SelectedGame?.ExecutablePath;
+            var selectedId = SelectedGame?.Id;
             var loaded = _libraryService.Load(throwOnError: true);
-            var unique = DeduplicateGames(loaded);
-            if (unique.Count != loaded.Count && !SaveGames(unique)) return;
             Games.Clear();
-            foreach (var game in unique) Games.Add(game);
-            SelectedGame = Games.FirstOrDefault(game => string.Equals(game.ExecutablePath, selectedPath, StringComparison.OrdinalIgnoreCase))
+            foreach (var game in loaded)
+            {
+                if (game.LastLaunchStatus == "Running" && !_runningGames.Contains(game.Id)) game.LastLaunchStatus = "Interrupted";
+                Games.Add(game);
+            }
+            OnPropertyChanged(nameof(IsLibraryReadOnly));
+            SelectedGame = Games.FirstOrDefault(game => game.Id == selectedId)
                 ?? Games.FirstOrDefault();
             RefreshView();
             Notify($"游戏库已刷新，共 {Games.Count} 个项目。");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or ArgumentException)
         {
-            Notify("游戏库读取失败，当前列表已保留。请检查数据文件和读取权限。", FeedbackKind.Error);
+            AppLog.Write("library.refresh-failed", ex);
+            ShowLibraryReadError();
         }
     }
 
     public GameAddOutcome AddGameFromPath(string path)
     {
+        var result = CommitImport([PrepareGame(path)]);
+        return result.Added > 0 ? GameAddOutcome.Added : result.Duplicates > 0 ? GameAddOutcome.Duplicate : GameAddOutcome.Failed;
+    }
+
+    public async Task<GameImportResult> AddGamesAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken)
+    {
+        if (IsImporting || IsLibraryReadOnly) return new(0, 0, paths.Count);
+        IsImporting = true;
         try
         {
-            var executablePath = Path.GetFullPath(path);
-            if (!File.Exists(executablePath)) return GameAddOutcome.Failed;
-            var rootPath = Path.GetDirectoryName(executablePath) ?? string.Empty;
-            var engine = DetectEngine(executablePath);
-            var metadata = OfflineGameMetadataService.Read(executablePath);
-            if (Games.Any(game => string.Equals(game.ExecutablePath, executablePath, StringComparison.OrdinalIgnoreCase)
-                || (string.Equals(game.RootPath, rootPath, StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(game.Engine, engine, StringComparison.OrdinalIgnoreCase))))
-            {
-                return GameAddOutcome.Duplicate;
-            }
+            var prepared = await Task.Run(() => paths.Select(path => { cancellationToken.ThrowIfCancellationRequested(); return PrepareGame(path); }).ToArray(), cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            return CommitImport(prepared);
+        }
+        finally { IsImporting = false; }
+    }
 
-            var game = new Game
+    private static Game? PrepareGame(string path)
+    {
+        try
+        {
+            var executable = Path.GetFullPath(path);
+            if (!File.Exists(executable) || !string.Equals(Path.GetExtension(executable), ".exe", StringComparison.OrdinalIgnoreCase)) return null;
+            var directory = Path.GetDirectoryName(executable)!;
+            var metadata = OfflineGameMetadataService.Read(executable);
+            return new Game
             {
                 Title = metadata.Title,
-                RootPath = rootPath,
-                ExecutablePath = executablePath,
-                WorkingDirectory = rootPath,
-                Engine = engine,
-                Description = "请编辑游戏条目补充简介。",
+                RootPath = directory,
+                ExecutablePath = executable,
+                WorkingDirectory = directory,
+                Engine = GameScanService.DetectEngine(directory),
+                CoverPath = metadata.CoverPath,
                 Tags = ["未分类"]
             };
-            game.CoverPath = metadata.CoverPath;
-
-            if (!SaveGames(Games.Append(game))) return GameAddOutcome.Failed;
-            Games.Add(game);
-            SelectedGame = game;
-            StatusMessage = $"已添加 {game.Title}";
-            return GameAddOutcome.Added;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
-        { return GameAddOutcome.Failed; }
+        { AppLog.Write("game.import-failed", ex); return null; }
+    }
+
+    private GameImportResult CommitImport(IReadOnlyList<Game?> prepared)
+    {
+        if (IsLibraryReadOnly) { ShowLibraryReadError(); return new(0, 0, prepared.Count); }
+        var pending = new List<Game>();
+        var duplicates = 0;
+        foreach (var game in prepared.OfType<Game>())
+        {
+            if (Games.Concat(pending).Any(existing => GameIdentity.AreSame(existing.ExecutablePath, game.ExecutablePath))) duplicates++;
+            else pending.Add(game);
+        }
+        var failed = prepared.Count - duplicates - pending.Count;
+        if (pending.Count > 0)
+        {
+            if (!SaveGames(Games.Concat(pending))) return new(0, duplicates, failed + pending.Count);
+            foreach (var game in pending) Games.Add(game);
+            SelectedGame = pending[^1];
+            UpdateCounts();
+        }
+        return new(pending.Count, duplicates, failed);
     }
 
     private void LaunchSelectedGame()
@@ -368,7 +474,7 @@ public sealed class MainWindowViewModel : ObservableObject
         var game = parameter as Game ?? SelectedGame;
         if (game is null) return;
 
-        var dialog = new GameEditorWindow(game) { Owner = System.Windows.Application.Current.MainWindow };
+        var dialog = new GameEditorWindow(game, candidate => Games.Any(other => other.Id != game.Id && GameIdentity.AreSame(other.ExecutablePath, candidate)), _runningGames.Contains(game.Id)) { Owner = System.Windows.Application.Current.MainWindow };
         if (dialog.ShowDialog() != true) { Notify("已取消编辑，游戏信息未修改。", FeedbackKind.Info); return; }
 
         game.UpdatedAt = DateTimeOffset.Now;
@@ -380,21 +486,25 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private async Task MonitorProcessAsync(Game game, Process process)
     {
-        var startedAt = DateTimeOffset.Now;
+        var watch = Stopwatch.StartNew();
         try
         {
             await process.WaitForExitAsync();
-            var duration = Math.Max(0, (long)(DateTimeOffset.Now - startedAt).TotalSeconds);
+            var duration = Math.Max(0, (long)watch.Elapsed.TotalSeconds);
+            var current = Games.FirstOrDefault(item => item.Id == game.Id);
+            if (current is null) return; // Removing a running entry must never recreate it on exit.
+            game = current;
             game.TotalPlaySeconds += duration;
             game.LastPlayedAt = DateTimeOffset.Now;
             game.LastLaunchStatus = process.ExitCode == 0 ? "Completed" : "Exited";
             if (SaveGames()) Notify($"{game.Title} 已结束，本次游玩 {FormatDuration(duration)}，记录已保存。", FeedbackKind.Info);
             RefreshView();
         }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
         {
-            game.LastLaunchStatus = "Unknown";
-            SaveGames();
+            AppLog.Write("game.monitor-failed", ex);
+            var current = Games.FirstOrDefault(item => item.Id == game.Id);
+            if (current is not null) { current.LastLaunchStatus = "Unknown"; SaveGames(); }
         }
         finally
         {
@@ -421,10 +531,17 @@ public sealed class MainWindowViewModel : ObservableObject
         var result = System.Windows.MessageBox.Show($"从库中移除“{game.Title}”？\n游戏文件不会被删除。", "移除游戏", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (result != MessageBoxResult.Yes) { Notify("已取消移除，游戏仍保留在库中。", FeedbackKind.Info); return; }
 
-        if (!SaveGames(Games.Where(item => item != game))) return;
-        Games.Remove(game);
+        RemoveGame(game);
+    }
+
+    public bool RemoveGame(Game game)
+    {
+        var current = Games.FirstOrDefault(item => item.Id == game.Id);
+        if (current is null || !SaveGames(Games.Where(item => item.Id != game.Id))) return false;
+        Games.Remove(current);
         SelectedGame = Games.FirstOrDefault();
         Notify($"已从库中移除 {game.Title}。游戏文件未删除。");
+        return true;
     }
 
     private void OpenSelectedFolder()
@@ -452,9 +569,17 @@ public sealed class MainWindowViewModel : ObservableObject
     private bool SaveGames(IEnumerable<Game>? snapshot = null)
     {
         try { _libraryService.Save(snapshot ?? Games); HasUnsavedLibraryChanges = false; return true; }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         {
+            AppLog.Write("library.save-failed", exception);
             if (snapshot is null) HasUnsavedLibraryChanges = true;
+            if (_libraryService.IsReadOnly) { ShowLibraryReadError(); return false; }
+            if (exception is LibraryConflictException)
+            {
+                StatusMessage = exception.Message;
+                Feedback.Show(StatusMessage, FeedbackKind.Error, RecoverLibraryCommand, "处理数据冲突");
+                return false;
+            }
             StatusMessage = HasUnsavedLibraryChanges
                 ? "游戏库未保存，修改仍保留在本次运行中。请检查写入权限后重新保存。"
                 : "游戏库未保存，本次操作未应用。请检查数据目录写入权限后重试。";
@@ -469,20 +594,36 @@ public sealed class MainWindowViewModel : ObservableObject
         Feedback.Show(message, kind);
     }
 
-    private static IReadOnlyList<Game> DeduplicateGames(IEnumerable<Game> games)
+    private void ShowLibraryReadError()
     {
-        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var seenDirectoryEngines = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = new List<Game>();
-        foreach (var game in games)
-        {
-            var executable = Path.GetFullPath(game.ExecutablePath);
-            var directoryKey = $"{Path.GetFullPath(game.RootPath)}|{game.Engine}";
-            if (!seenPaths.Add(executable) || (game.Engine.Equals("BGI", StringComparison.OrdinalIgnoreCase) && !seenDirectoryEngines.Add(directoryKey))) continue;
-            result.Add(game);
-        }
-        return result;
+        OnPropertyChanged(nameof(IsLibraryReadOnly));
+        StatusMessage = _libraryService.ReadError ?? "游戏库读取失败，当前列表已保留。";
+        Feedback.Show(StatusMessage, FeedbackKind.Error, RecoverLibraryCommand, "恢复数据");
     }
+
+    private void RecoverLibrary()
+    {
+        var choice = System.Windows.MessageBox.Show($"将当前可读取的 {Games.Count} 个项目保存为游戏库？\n原文件会另存为恢复副本，不会删除。\n\n选择“否”打开数据目录，可先检查 library.json.bak 等备份。", "恢复游戏库", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+        if (choice == MessageBoxResult.No) { OpenDataFolder(); return; }
+        if (choice != MessageBoxResult.Yes) return;
+        try
+        {
+            _libraryService.Recover(Games);
+            HasUnsavedLibraryChanges = false;
+            OnPropertyChanged(nameof(IsLibraryReadOnly));
+            Notify("当前列表已保存，原游戏库已保留恢复副本。");
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
+        { AppLog.Write("library.recovery-failed", ex); Notify("恢复未完成，请检查数据目录权限。当前列表和原文件已保留。", FeedbackKind.Error); }
+    }
+
+    private void OpenDataFolder()
+    {
+        try { Directory.CreateDirectory(_libraryService.DataDirectory); Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { _libraryService.DataDirectory }, UseShellExecute = true }); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception) { AppLog.Write("library.open-data-failed", ex); Notify("无法打开数据目录。", FeedbackKind.Error); }
+    }
+
+    public bool TrySavePendingChanges() => !HasUnsavedLibraryChanges || SaveGames();
 
     private void RaiseCommandStates()
     {
@@ -493,20 +634,11 @@ public sealed class MainWindowViewModel : ObservableObject
         OpenFolderCommand.RaiseCanExecuteChanged();
     }
 
-    private static string DetectEngine(string executablePath)
-    {
-        var directory = Path.GetDirectoryName(executablePath) ?? string.Empty;
-        if (File.Exists(Path.Combine(directory, "renpy"))) return "Ren'Py";
-        if (File.Exists(Path.Combine(directory, "UnityPlayer.dll"))) return "Unity";
-        if (File.Exists(Path.Combine(directory, "BGI.gdb")) || File.Exists(Path.Combine(directory, "BGI.kdb")) || File.Exists(Path.Combine(directory, "BGI.hvl")) || Directory.EnumerateFiles(directory, "data*.arc").Any()) return "BGI";
-        return "未知引擎";
-    }
-
     private static string FormatDuration(long seconds)
     {
         var duration = TimeSpan.FromSeconds(seconds);
         return duration.TotalHours >= 1
             ? $"{(int)duration.TotalHours} 小时 {duration.Minutes} 分钟"
-            : $"{Math.Max(1, duration.Minutes)} 分钟";
+            : seconds < 60 ? $"{seconds} 秒" : $"{duration.Minutes} 分钟";
     }
 }

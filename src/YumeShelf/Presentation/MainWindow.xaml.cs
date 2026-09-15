@@ -18,7 +18,7 @@ public partial class MainWindow : Window
 
     public MainWindow() : this(new MainWindowViewModel()) { }
 
-    public MainWindow(MainWindowViewModel viewModel)
+    public MainWindow(MainWindowViewModel viewModel, Func<MessageBoxResult>? choosePendingClose = null)
     {
         InitializeComponent();
         Icon = LoadIcon();
@@ -30,8 +30,18 @@ public partial class MainWindow : Window
             if (args.NewValue is MainWindowViewModel current)
             {
                 current.PropertyChanged += ViewModelChanged;
-                ShowPage(current.ActiveNavigation, false);
+                // Let inherited DataContext reach the whole tree before hiding/showing pages.
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (ReferenceEquals(DataContext, current)) ShowPage(current.ActiveNavigation, false);
+                }), System.Windows.Threading.DispatcherPriority.DataBind);
             }
+        };
+        Closing += (_, args) =>
+        {
+            if (DataContext is not MainWindowViewModel current || !current.HasUnsavedLibraryChanges) return;
+            var choice = choosePendingClose?.Invoke() ?? System.Windows.MessageBox.Show(this, "游戏库仍有保存失败的修改。\n选择“是”重新保存并退出；“否”放弃这些修改退出；“取消”返回应用。", "有未保存的游戏库修改", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+            args.Cancel = choice == MessageBoxResult.Cancel || (choice == MessageBoxResult.Yes && !current.TrySavePendingChanges());
         };
         Closed += (_, _) =>
         {

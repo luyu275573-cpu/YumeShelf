@@ -8,12 +8,18 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "YumeShelf.TestGame", "tests
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "YumeShelf.SettingsChecks", "tests\YumeShelf.SettingsChecks\YumeShelf.SettingsChecks.csproj", "{7E6B832A-763E-48A2-A38A-D8571FE95017}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "YumeShelf.ReliabilityChecks", "tests\YumeShelf.ReliabilityChecks\YumeShelf.ReliabilityChecks.csproj", "{5F853DEB-5390-4A37-A00F-C16448D44190}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+        {5F853DEB-5390-4A37-A00F-C16448D44190}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {5F853DEB-5390-4A37-A00F-C16448D44190}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {5F853DEB-5390-4A37-A00F-C16448D44190}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {5F853DEB-5390-4A37-A00F-C16448D44190}.Release|Any CPU.Build.0 = Release|Any CPU
 		{2A1B0B79-5EF2-4B37-8F9E-E8F57B2E2B01}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{2A1B0B79-5EF2-4B37-8F9E-E8F57B2E2B01}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2A1B0B79-5EF2-4B37-8F9E-E8F57B2E2B01}.Release|Any CPU.ActiveCfg = Release|Any CPU

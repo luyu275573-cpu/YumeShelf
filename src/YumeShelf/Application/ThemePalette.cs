@@ -12,7 +12,9 @@ public static class ThemePalette
     {
         var night = settings.NightMode;
         var accent = "#4B5563";
-        if (night) Set(resources, "#0D1117", "#D9151A22", "#E611161E", "#E61B222D", "#1B222D", "#202936", "#303B49", "#EDF2F7", "#97A4B3", "#E87745", "#38231D", "#202936", "#FFF8F2", "#0D1117", "#36000000");
+        resources["AccentTextBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(night ? "#AAB9CB" : accent));
+        resources["CoverPlaceholderBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(night ? "#202936" : "#F2F2F2"));
+        if (night) Set(resources, "#0D1117", "#D9151A22", "#E611161E", "#E61B222D", "#1B222D", "#202936", "#303B49", "#EDF2F7", "#97A4B3", "#536277", "#27303C", "#202936", "#FFFFFF", "#0D1117", "#36000000");
         else Set(resources, "#FFFFFF", "#F8FFFFFF", "#F7F7F8", "#FFFFFFFF", "#FFFFFFFF", "#F7F7F8", "#E5E7EB", "#111111", "#6B7280", accent, "#F1F2F4", "#F7F7F8", "#FFFFFF", "#FFFFFF", "#18000000");
         resources["FeedbackSuccessBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(night ? "#7BDCB5" : "#16724A"));
         resources["FeedbackErrorBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(night ? "#FFB4AB" : "#B42318"));

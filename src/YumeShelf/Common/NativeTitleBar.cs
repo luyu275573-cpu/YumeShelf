@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using YumeShelf.Infrastructure;
 
 namespace YumeShelf.Common;
 
@@ -17,8 +18,9 @@ public static class NativeTitleBar
         var background = (window.FindResource("WindowBackground") as SolidColorBrush)?.Color ?? Colors.White;
         var caption = ColorRef(background);
         var text = ColorRef(background.R + background.G + background.B > 390 ? Colors.Black : Colors.White);
-        DwmSetWindowAttribute(handle, CaptionColor, ref caption, sizeof(int));
-        DwmSetWindowAttribute(handle, CaptionTextColor, ref text, sizeof(int));
+        var captionResult = DwmSetWindowAttribute(handle, CaptionColor, ref caption, sizeof(int));
+        var textResult = DwmSetWindowAttribute(handle, CaptionTextColor, ref text, sizeof(int));
+        if (captionResult != 0 || textResult != 0) AppLog.Write("window.native-caption-unavailable");
     }
 
     private static int ColorRef(System.Windows.Media.Color color) => color.R | (color.G << 8) | (color.B << 16);
