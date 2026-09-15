@@ -1,0 +1,199 @@
+<UserControl x:Class="YumeShelf.Presentation.SettingsPage"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Background="{DynamicResource WindowBackground}"
+        Foreground="{DynamicResource PrimaryTextBrush}">
+    <UserControl.Resources>
+        <Style x:Key="SectionPanel" TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedSection}" Value="应用美化">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="CategoryItem" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="16,13" />
+            <Setter Property="Margin" Value="0,4" />
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Chrome" CornerRadius="6" Padding="{TemplateBinding Padding}" Background="Transparent">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Surface2Brush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderThickness" Value="1" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    <Grid Background="{DynamicResource WindowBackground}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="190" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0" Padding="18,28">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top">
+                    <TextBlock Text="设置" FontSize="25" FontWeight="SemiBold" Margin="12,0,0,8" />
+                    <TextBlock Text="让游戏库更合你意" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="12,0,0,28" />
+                </StackPanel>
+                <TextBlock DockPanel.Dock="Bottom" Text="YumeShelf · 本地游戏库" Foreground="{DynamicResource MutedTextBrush}" FontSize="10" Margin="12,0,0,0" />
+                <ListBox ItemsSource="{Binding Sections}" SelectedItem="{Binding SelectedSection, Mode=TwoWay}"
+                         Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource CategoryItem}"
+                         AutomationProperties.Name="设置分类" />
+            </DockPanel>
+        </Border>
+        <Grid Grid.Column="1" Margin="24,28,24,22">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock Text="{Binding SelectedSection}" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,20" />
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <Grid Margin="0,0,18,0">
+                    <StackPanel Style="{StaticResource SectionPanel}">
+                        <TextBlock Text="选择背景，调整氛围。确认保存前，只在这里预览。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,18" />
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,18">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,16,0"><TextBlock Text="日间配色" FontWeight="SemiBold"/><TextBlock Text="夜间模式会覆盖当前配色，使用独立的深色界面。" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,5,0,0"/></StackPanel>
+                                <StackPanel Grid.Column="1"><TextBlock Text="黑 / 白 / 灰" FontWeight="SemiBold"/><TextBlock Text="简洁中性色界面，强调色仅用于交互状态。" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" FontSize="10" Margin="0,5,0,0"/><CheckBox Content="夜间模式" IsChecked="{Binding NightMode, Mode=TwoWay}" Margin="0,12,0,0" Foreground="{DynamicResource PrimaryTextBrush}"/></StackPanel>
+                            </Grid>
+                        </Border>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="背景效果预览" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="实时预览" Foreground="{DynamicResource AccentBrush}" FontSize="11" VerticalAlignment="Center" />
+                        </Grid>
+                        <Border Height="190" Background="{DynamicResource PreviewBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+                            <Grid ClipToBounds="True">
+                                <Image Source="{Binding PreviewImage, Mode=OneWay}" Stretch="UniformToFill" Opacity="{Binding BackgroundOpacity}">
+                                    <Image.Effect><BlurEffect Radius="{Binding BackgroundBlur}" KernelType="Gaussian" /></Image.Effect>
+                                </Image>
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasBackground, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                    <TextBlock Text="默认深色背景" FontSize="18" HorizontalAlignment="Center" />
+                                    <TextBlock Text="选择一张图片开始预览" Foreground="{DynamicResource MutedTextBrush}" Margin="0,8,0,0" />
+                                </StackPanel>
+                                <Border VerticalAlignment="Bottom" Background="{DynamicResource OverlayBrush}" Padding="14,10">
+                                    <TextBlock Text="文字与操作按钮始终保持清晰" Foreground="{DynamicResource PrimaryTextBrush}" FontSize="11" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <Grid Margin="0,12,0,20">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,10,0">
+                                <TextBlock Text="{Binding BackgroundFileName, Mode=OneWay, TargetNullValue=未选择图片}" TextTrimming="CharacterEllipsis" FontSize="12" />
+                                <TextBlock Text="PNG / JPG / BMP / GIF（静态）" Foreground="{DynamicResource MutedTextBrush}" FontSize="10" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="选择图片" Click="ChooseBackground" Style="{StaticResource SecondaryButton}" Padding="14,8" />
+                            <Button Grid.Column="2" Content="恢复默认" Command="{Binding ClearBackgroundCommand}" Style="{StaticResource LinkButton}" Margin="14,0,0,0" VerticalAlignment="Center" />
+                        </Grid>
+                        <Border Background="{DynamicResource CardBackground}" CornerRadius="7" Padding="18">
+                            <StackPanel>
+                                <Grid>
+                                    <TextBlock Text="页面透明度" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding PageTransparency, StringFormat={}{0:P0}}" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Slider Minimum="0" Maximum="1" SmallChange="0.01" LargeChange="0.1" IsSnapToTickEnabled="False" Value="{Binding PageTransparency, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,12,0,4" AutomationProperties.Name="页面透明度" />
+                                <TextBlock Text="调节左侧导航、游戏库和详情面板的透明程度，文字和按钮保持清晰。" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                <Grid Margin="0,20,0,0">
+                                    <TextBlock Text="高斯模糊" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding BackgroundBlur, StringFormat={}{0:0} px}" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Slider Minimum="0" Maximum="30" Value="{Binding BackgroundBlur, Mode=TwoWay}" Margin="0,12,0,4" AutomationProperties.Name="背景高斯模糊" />
+                                <TextBlock Text="只模糊背景图片，不影响文字、封面和按钮。" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    <StackPanel>
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers><DataTrigger Binding="{Binding SelectedSection}" Value="页面分栏"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="根据浏览习惯选择页面结构。" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,20" />
+                        <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="20" Margin="0,0,0,16">
+                            <StackPanel>
+                                <RadioButton Content="简化页面" GroupName="Layout" IsChecked="{Binding SimpleLayout, Mode=TwoWay}" Foreground="{DynamicResource PrimaryTextBrush}" FontSize="16" FontWeight="SemiBold" />
+                                <Grid Height="88" Margin="22,18,0,12">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <Border Background="{DynamicResource Surface2Brush}" CornerRadius="4" Margin="0,0,6,0" />
+                                    <Border Grid.Column="1" Background="{DynamicResource AccentSoftBrush}" CornerRadius="4" Padding="10"><TextBlock Text="游戏库 + 底部快捷操作" VerticalAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap" /></Border>
+                                </Grid>
+                                <TextBlock Text="隐藏右侧详情栏。选择游戏后，可在底部启动、编辑、收藏和移除。" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" FontSize="12" Margin="22,0,0,0" />
+                            </StackPanel>
+                        </Border>
+                        <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="20">
+                            <StackPanel>
+                                <RadioButton Content="完整页面" GroupName="Layout" IsChecked="{Binding FullLayout, Mode=TwoWay}" Foreground="{DynamicResource PrimaryTextBrush}" FontSize="16" FontWeight="SemiBold" />
+                                <Grid Height="88" Margin="22,18,0,12">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /><ColumnDefinition Width="100" /></Grid.ColumnDefinitions>
+                                    <Border Background="{DynamicResource Surface2Brush}" CornerRadius="4" Margin="0,0,6,0" />
+                                    <Border Grid.Column="1" Background="{DynamicResource AccentSoftBrush}" CornerRadius="4" Margin="0,0,6,0"><TextBlock Text="游戏库" VerticalAlignment="Center" HorizontalAlignment="Center" /></Border>
+                                    <Border Grid.Column="2" Background="{DynamicResource AccentBrush}" CornerRadius="4"><TextBlock Text="详情" Foreground="{DynamicResource OnAccentBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" /></Border>
+                                </Grid>
+                                <TextBlock Text="左侧导航、中间游戏库、右侧详情，适合同时查看游戏资料。" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" FontSize="12" Margin="22,0,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    <StackPanel>
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers><DataTrigger Binding="{Binding SelectedSection}" Value="AI 检索"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="通过自然语言查找游戏。" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,20" />
+                        <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="24">
+                            <StackPanel>
+                                <TextBlock Text="云端 AI 服务" Foreground="{DynamicResource AccentBrush}" FontSize="12" />
+                                <TextBlock Text="OpenAI 兼容 API" FontSize="20" FontWeight="SemiBold" Margin="0,12,0,16" />
+                                <TextBlock Text="API 地址" FontWeight="SemiBold" />
+                                <TextBox Text="{Binding AiApiBaseUrl, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource EditorTextBox}" Margin="0,6,0,12" />
+                                <TextBlock Text="API Key（仅加密保存在本机）" FontWeight="SemiBold" />
+                                <PasswordBox x:Name="AiKeyBox" Style="{StaticResource EditorPasswordBox}" PasswordChanged="AiKeyBox_OnPasswordChanged" Margin="0,6,0,12" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
+                                    <StackPanel><TextBlock Text="模型名称" FontWeight="SemiBold"/><TextBox Text="{Binding AiModel, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource EditorTextBox}" Margin="0,6,12,0" /></StackPanel>
+                                    <StackPanel Grid.Column="1"><TextBlock Text="超时（秒）" FontWeight="SemiBold"/><TextBox Text="{Binding AiTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource EditorTextBox}" Margin="0,6,0,0" /></StackPanel>
+                                </Grid>
+                                <WrapPanel Margin="0,18,0,0"><Button Content="检查服务" Command="{Binding TestAiConnectionCommand}" Style="{StaticResource SecondaryButton}" Margin="0,0,10,8"/><Button Content="测试模型回答" Command="{Binding TestAiModelCommand}" Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/></WrapPanel>
+                                <TextBlock Text="{Binding AiStatus}" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                <TextBlock Text="保存后用于下一次 AI 请求。模型测试会产生少量用量；联网检索和资料补全尚未接入。" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,18,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </ScrollViewer>
+            <TextBlock Grid.Row="2" Text="{Binding ErrorMessage}" Foreground="{DynamicResource FeedbackErrorBrush}" TextWrapping="Wrap" Margin="0,12,0,0" />
+            <Border Grid.Row="3" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding SaveNotice}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,12,0" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="取消" Command="{Binding CancelCommand}" Style="{StaticResource SecondaryButton}" MinWidth="72" Margin="0,0,12,0" ToolTip="恢复已保存的设置" />
+                        <Button Content="确认并保存" Command="{Binding ConfirmCommand}" Style="{StaticResource PrimaryButton}" MinWidth="110" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

@@ -1,0 +1,23 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <SolidColorBrush x:Key="WindowBackground" Color="#0D1117" />
+    <SolidColorBrush x:Key="ShellBackground" Color="#D9151A22" />
+    <SolidColorBrush x:Key="SidebarBackground" Color="#E611161E" />
+    <SolidColorBrush x:Key="DetailBackground" Color="#E61B222D" />
+    <SolidColorBrush x:Key="CardBackground" Color="#1B222D" />
+    <SolidColorBrush x:Key="Surface2Brush" Color="#202936" />
+    <SolidColorBrush x:Key="BorderBrush" Color="#303B49" />
+    <SolidColorBrush x:Key="PrimaryTextBrush" Color="#EDF2F7" />
+    <SolidColorBrush x:Key="MutedTextBrush" Color="#97A4B3" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#E87745" />
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="#38231D" />
+    <SolidColorBrush x:Key="TealBrush" Color="#63B9AA" />
+    <SolidColorBrush x:Key="CoverPlaceholderBrush" Color="#345A7E" />
+    <SolidColorBrush x:Key="SearchBackgroundBrush" Color="#202936" />
+    <SolidColorBrush x:Key="OnAccentBrush" Color="#FFF8F2" />
+    <SolidColorBrush x:Key="PreviewBackgroundBrush" Color="#0D1117" />
+    <SolidColorBrush x:Key="OverlayBrush" Color="#36000000" />
+    <SolidColorBrush x:Key="FeedbackSuccessBrush" Color="#7BDCB5" />
+    <SolidColorBrush x:Key="FeedbackErrorBrush" Color="#FFB4AB" />
+    <SolidColorBrush x:Key="FeedbackWarningBrush" Color="#F8CF79" />
+</ResourceDictionary>

@@ -1,0 +1,18 @@
+<Application x:Class="YumeShelf.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:common="clr-namespace:YumeShelf.Common"
+             StartupUri="Presentation/MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Resources/Colors.xaml" />
+                <ResourceDictionary Source="Resources/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <common:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+            <common:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
+            <common:InverseBooleanConverter x:Key="InverseBooleanConverter" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
+
