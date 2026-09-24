@@ -673,3 +673,11 @@ G:\\galgameStart\\src\\YumeShelf\\bin\\Debug\\net8.0-windows\\YumeShelf.exe
 - 首轮`.runtime/checks/check-20260924-180725.log`的411项可靠性通过，发布脚本因PowerShell5默认编码读取中文csproj失败。改为XML按文件声明加载后，最终门禁`.runtime/checks/check-20260924-181019.log`完整通过：零警告/错误、SettingsChecks全过、可靠性 **411项**（新增17项）、无绑定错误、发布资源/版本/图标通过。可靠性证据`962ea6f595174c2e8e17fa6b5f7b5d7c`，设置证据`6fadef6d7cd3404e91d7bf095f31a7ad`（对应检查程序test-artifacts目录）。
 - 正式bin另行Release构建，启动前无旧实例，新版PID **11712**响应正常。computer-use确认原3条游戏和AI页的会话保留说明；其他应用Docker报错弹窗遮挡部分画面，未操作该弹窗，不把其错误归于YumeShelf。真实library/settings哈希与上轮一致，未发送真实模型请求。
 - README、总开发文档v0.14、AI文档v1.12及发行说明同步。自包含打包首次被NuGet超时/SSL中断阻塞，正在改用微软dotnet-public公开源；仅网络失败不标为程序功能失败，封包与推送完成情况另行追加实测记录。
+
+### 同日补充：自包含封包、隔离安装与仓库同步完成
+
+- 官方NuGet直连恢复后取得.NETCore、WindowsDesktop和AspNetCore的8.0.31运行时包，使用本地依赖缓存完成自包含发布；未改为依赖系统.NET的包冒充自包含。可用`scripts/package.ps1 -RestoreSource <本地NuGet包目录或源地址>`切换还原源，不改变构建内容。
+- 交付包：`.runtime/releases/20260924-182627/YumeShelf-0.3.0-preview.1-win-x64.zip`，75,655,794字节（约72.2MiB），SHA-256为`A0BF784FE5AFD51908BA73875819BA9EFA9DACA7E52B8E98DE345E2B6D396E5B`。清单记录源提交`60aae2381abd7188191f82cccb86b0255678c318`、`sourceDirty=false`及472个文件；源码提交已包含此前本地AI、品牌等累计实现，不只本轮新增功能。
+- 发布目录`package-smoke.json`确认资源图片/图标可解码、样式可加载、4技能/9工具在包内、运行时自包含且未访问用户数据。随后从ZIP解压到独立验证目录，运行包内Install.ps1，逐一校验安装后472项哈希、快捷方式目标、重复同版本安装拒绝覆盖，再运行安装目录中的EXE诊断入口，全部通过。证据：`.runtime/package-validation-20260924-1830/verification.log`与`installed-smoke.json`；未向用户桌面创建测试快捷方式。
+- 以上是当前开发机上的隔离目录验证，不能替代干净Win10/Win11、全部DPI、签名安装向导或真实用户跨版本升级验收。真实模型的54项场景仍由用户按[YumeTestV1](../YumeTestV1.md)记录结果；不将模拟回归和包诊断记为真实AI通过。正式应用PID11712保持响应，本次后续仅有封包/文档操作，无需再中断用户测试。
+- 已将实现提交`60aae23`非强制推送至新仓库[luyu275573-cpu/YumeShelf](https://github.com/luyu275573-cpu/YumeShelf)，`git ls-remote`核对远端master一致。本段及发行验证说明作为后续纯文档提交同步；包清单继续指向实际构建源码提交，不重写包的来源记录。构建、依赖缓存、测试证据与真实用户数据均未纳入Git。

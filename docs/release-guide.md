@@ -22,3 +22,9 @@
 先运行`scripts/check.ps1`，再运行`scripts/package.ps1`。后者生成自包含目录、ZIP、SHA-256及`package-manifest.json`，写明源提交和工作区是否有未提交内容。对发布目录执行`YumeShelf.exe --verify-package 报告绝对路径`可进行不读取用户库/配置的资源与运行时检查；不是完整UI测试。
 
 真实AI按根目录`YumeTestV1.md`进行，记录包清单中的提交号。首版放行前仍需：干净Win10/Win11、100/125/150/200%缩放、安装/升级/回退/卸载、断网与磁盘权限、真实文字/视觉/工具模型场景。未通过项不宣称兼容。
+
+## 2026-09-24 验证记录
+
+0.3.0-preview.1已生成自包含ZIP（约72.2MiB），对应源码提交`60aae23`，清单记录构建时工作区干净。本机从ZIP解压并在隔离目录安装，472项文件哈希、快捷方式目标、相同版本拒绝覆盖及安装后资源/运行时诊断均通过，未访问用户游戏库或消耗模型额度。完整路径、校验值和证据见[开发日志](development-log.md#同日补充自包含封包隔离安装与仓库同步完成)。这些检查不等于干净系统或真实AI验收。
+
+依赖源连接不稳定时，可通过`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1 -RestoreSource <NuGet源地址或本地包目录>`使用已验证的官方依赖源/缓存。不得省略自包含参数来绕过运行时下载并继续宣称无需.NET。
