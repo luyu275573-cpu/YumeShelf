@@ -173,11 +173,20 @@
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
                                     <StackPanel><TextBlock Text="模型名称" FontWeight="SemiBold"/><TextBox Text="{Binding AiModel, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource EditorTextBox}" Margin="0,6,12,0" /></StackPanel>
-                                    <StackPanel Grid.Column="1"><TextBlock Text="超时（秒）" FontWeight="SemiBold"/><TextBox x:Name="AiTimeoutBox" Text="{Binding AiTimeoutSeconds, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" ToolTip="5–120 秒，覆盖一次完整任务" Style="{StaticResource EditorTextBox}" Margin="0,6,0,0" /></StackPanel>
+                                    <StackPanel Grid.Column="1"><TextBlock Text="连接测试超时（秒）" FontWeight="SemiBold"/><TextBox x:Name="AiTimeoutBox" Text="{Binding AiTimeoutSeconds, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" ToolTip="5–120 秒，用于服务与文字连接测试；原设置保留" Style="{StaticResource EditorTextBox}" Margin="0,6,0,0" /></StackPanel>
+                                </Grid>
+                                <TextBlock Text="识图模型（可选）" FontWeight="SemiBold" Margin="0,16,0,0"/>
+                                <TextBox Text="{Binding AiVisionModel, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource EditorTextBox}" Margin="0,6,0,6" AutomationProperties.Name="识图模型"/>
+                                <TextBlock Text="填写同一服务支持图片输入的模型名称；留空沿用对话模型。视觉测试使用内置数字图，不发送你的截图；每个测试会产生少量 API 用量。" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" FontSize="12"/>
+                                <Grid Margin="0,12,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,12,0"><TextBlock Text="单次等待（秒）"/><TextBox x:Name="AiRequestTimeoutBox" Text="{Binding AiRequestTimeoutSeconds, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" Style="{StaticResource EditorTextBox}" ToolTip="5–120 秒；流式响应持续到达时刷新等待期限"/></StackPanel>
+                                    <StackPanel Grid.Column="1"><TextBlock Text="整轮上限（秒）"/><TextBox x:Name="AiTaskTimeoutBox" Text="{Binding AiTaskTimeoutSeconds, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" Style="{StaticResource EditorTextBox}" ToolTip="5–600 秒；包括模型与工具全部步骤"/></StackPanel>
                                 </Grid>
                                 <WrapPanel Margin="0,18,0,0"><Button Content="检查服务" Command="{Binding TestAiConnectionCommand}" Style="{StaticResource SecondaryButton}" Margin="0,0,10,8"/><Button Content="测试模型回答" Command="{Binding TestAiModelCommand}" Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/></WrapPanel>
+                                <WrapPanel><Button Content="测试视觉能力" Command="{Binding TestAiVisionCommand}" Style="{StaticResource SecondaryButton}" Margin="0,0,10,8"/><Button Content="测试工具协议" Command="{Binding TestAiProtocolCommand}" Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/></WrapPanel>
+                                <TextBlock Text="{Binding CapabilitySummary}" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                 <TextBlock Text="{Binding AiStatus}" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
-                                <TextBlock Text="保存后用于下一次 AI 请求。模型测试会产生少量用量；联网检索和资料补全尚未接入。" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,18,0,0" />
+                                <TextBlock Text="保存后用于下一次 AI 请求。可在 AI 助手中启用 VNDB 资料检索、关联游戏并审核资料建议。旧版超时仅用于服务与文字测试。" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,18,0,0" />
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -190,7 +199,13 @@
                     <TextBlock Text="{Binding SaveNotice}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,12,0" />
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
                         <Button Content="取消" Command="{Binding CancelCommand}" Style="{StaticResource SecondaryButton}" MinWidth="72" Margin="0,0,12,0" ToolTip="恢复已保存的设置" />
-                        <Button IsEnabled="{Binding ElementName=AiTimeoutBox, Path=(Validation.HasError), Converter={StaticResource InverseBooleanConverter}}" Content="确认并保存" Command="{Binding ConfirmCommand}" Style="{StaticResource PrimaryButton}" MinWidth="110" />
+                        <Button Content="确认并保存" Command="{Binding ConfirmCommand}" MinWidth="110">
+                            <Button.Style><Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}"><Style.Triggers>
+                                <DataTrigger Binding="{Binding ElementName=AiTimeoutBox, Path=(Validation.HasError)}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger>
+                                <DataTrigger Binding="{Binding ElementName=AiRequestTimeoutBox, Path=(Validation.HasError)}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger>
+                                <DataTrigger Binding="{Binding ElementName=AiTaskTimeoutBox, Path=(Validation.HasError)}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger>
+                            </Style.Triggers></Style></Button.Style>
+                        </Button>
                     </StackPanel>
                 </Grid>
             </Border>

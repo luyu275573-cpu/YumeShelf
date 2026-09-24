@@ -8,6 +8,7 @@ using System.Windows.Media;
 using System.Text.Json;
 using Microsoft.Win32;
 using YumeShelf.Application;
+using YumeShelf.Application.AI;
 using YumeShelf.Common;
 using YumeShelf.Domain;
 using YumeShelf.Infrastructure;
@@ -95,7 +96,131 @@ public sealed class MainWindowViewModel : ObservableObject
     public IReadOnlyList<string> FilterOptions { get; }
     public string ActiveNavigation { get => _activeNavigation; private set => SetProperty(ref _activeNavigation, value); }
     public SettingsViewModel SettingsEditor => _settingsEditor ??= CreateSettingsEditor();
-    public AiAssistantViewModel AiAssistant => _aiAssistant ??= new AiAssistantViewModel(_settings, Feedback);
+    public AiAssistantViewModel AiAssistant => _aiAssistant ??= new AiAssistantViewModel(_settings, Feedback,
+        () => Games.Select(AiGameSummary.From).ToArray(), () => SelectedGame is null ? null : AiGameSummary.From(SelectedGame), ApplyAiDraft, UndoAiDraft, ApplyAiCover, UndoAiCover,
+        applyUpdate: ApplyAiUpdate, scan: ScanAiGamesAsync, import: ImportAiGamesAsync,
+        libraryAvailable: () => _libraryService.ReadError is null && !HasUnsavedLibraryChanges,
+        sessionStore: new AiSessionStore(_settingsStore.SessionPath));
+    private (AiGameSummary After, Dictionary<string, string> Values, string? CoverBefore, bool CoverChanged)? _aiUndo;
+
+    public string? ApplyAiCover(AiCoverDraft draft, AiCoverCandidate candidate, AiImageAttachment image)
+        => ApplyAiUpdate(new(draft.Original, [], "封面修改") { Covers = draft.Candidates }, candidate, image);
+
+    public string? ApplyAiUpdate(AiMetadataDraft draft, AiCoverCandidate? candidate, AiImageAttachment? image)
+    {
+        var chosen = draft.Fields.Where(f => f.Accepted).ToArray();
+        if (chosen.Length == 0 && image is null) return "请勾选要保存的字段或选取封面。";
+        if (image is not null && (candidate is null || !draft.Covers.Contains(candidate))) return "请从本轮封面候选中选择图片。";
+        var error = CheckAiCoverTarget(draft.Original, out var current);
+        if (error is not null) return error;
+        var copy = JsonSerializer.Deserialize<Game>(JsonSerializer.Serialize(current))!;
+        var oldValues = new Dictionary<string, string>();
+        foreach (var field in chosen)
+        {
+            if (!oldValues.TryAdd(field.Field, OriginalValue(current!, field.Field))) return "资料建议包含重复字段。";
+            AiMetadataDraft.SetField(copy, field.Field, field.Proposed);
+        }
+        if (chosen.Any(f => f.Field == "ReleaseDate") && copy.ReleaseDate.Length >= 4)
+        {
+            var year = int.Parse(copy.ReleaseDate[..4], System.Globalization.CultureInfo.InvariantCulture);
+            if (chosen.Any(f => f.Field == "ReleaseYear") && copy.ReleaseYear != year) return "发行日期与年份冲突，请核对后保存。";
+            oldValues.TryAdd("ReleaseYear", OriginalValue(current!, "ReleaseYear")); copy.ReleaseYear = year;
+        }
+        else if (chosen.Any(f => f.Field == "ReleaseYear") && copy.ReleaseDate.Length >= 4 && copy.ReleaseDate[..4] != copy.ReleaseYear?.ToString())
+        { oldValues.TryAdd("ReleaseDate", current!.ReleaseDate); copy.ReleaseDate = ""; }
+        string? file = null;
+        var committed = false;
+        var created = false;
+        try
+        {
+            if (image is not null)
+            {
+                var directory = Path.Combine(_libraryService.DataDirectory, "Covers");
+                Directory.CreateDirectory(directory);
+                if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) return "封面目录不能是链接目录，请检查应用数据位置。";
+                file = Path.Combine(directory, $"{current!.Id:N}-{Guid.NewGuid():N}.png");
+                using (var output = new FileStream(file, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                { created = true; output.Write(image.PngBytes); }
+                copy.CoverPath = file;
+            }
+            copy.UpdatedAt = DateTimeOffset.Now;
+            if (!SaveGames(Games.Select(g => g.Id == copy.Id ? copy : g))) return "游戏库保存失败，原资料和封面未改变。请修复后重试。";
+            committed = true;
+            var previous = current!.CoverPath;
+            foreach (var field in oldValues.Keys) AiMetadataDraft.SetField(current, field, OriginalValue(copy, field), true);
+            current.CoverPath = copy.CoverPath; current.UpdatedAt = copy.UpdatedAt;
+            _aiUndo = (AiGameSummary.From(current), oldValues, previous, image is not null);
+            RefreshView();
+            return null;
+        }
+        finally
+        {
+            if (!committed && created)
+            {
+                try { if (file is not null && File.Exists(file)) File.Delete(file); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { AppLog.Write("ai.cover-cleanup-failed", ex); }
+            }
+        }
+    }
+
+    public string? UndoAiCover()
+        => UndoAiDraft();
+
+    private static string OriginalValue(Game game, string field) => field switch
+    {
+        "Title" => game.Title, "Engine" => game.Engine, "Description" => game.Description,
+        "ReleaseYear" => game.ReleaseYear?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
+        "ReleaseDate" => game.ReleaseDate, "GameType" => game.GameType, "Tags" => JsonSerializer.Serialize(game.Tags),
+        _ => throw new InvalidOperationException("不允许修改该字段。")
+    };
+
+    public string? UndoAiDraft()
+    {
+        if (_aiUndo is not { } undo) return "没有可撤销的游戏卡片修改。";
+        var error = CheckAiCoverTarget(undo.After, out var current);
+        if (error is not null) return error;
+        var copy = JsonSerializer.Deserialize<Game>(JsonSerializer.Serialize(current))!;
+        foreach (var pair in undo.Values) AiMetadataDraft.SetField(copy, pair.Key, pair.Value, true);
+        if (undo.CoverChanged) copy.CoverPath = undo.CoverBefore;
+        copy.UpdatedAt = DateTimeOffset.Now;
+        if (!SaveGames(Games.Select(g => g.Id == copy.Id ? copy : g))) return "撤销未保存，当前资料和封面保持不变。";
+        foreach (var pair in undo.Values) AiMetadataDraft.SetField(current!, pair.Key, pair.Value, true);
+        current!.CoverPath = copy.CoverPath; current.UpdatedAt = copy.UpdatedAt;
+        _aiUndo = null;
+        // Retain both images: the library backup or an earlier manual selection can still reference them.
+        RefreshView();
+        return null;
+    }
+
+    private string? CheckAiCoverTarget(AiGameSummary original, out Game? current)
+    {
+        current = Games.FirstOrDefault(g => g.Id == original.Id);
+        if (IsLibraryReadOnly || HasUnsavedLibraryChanges) return "游戏库只读或存在未保存修改，请先处理游戏库状态。";
+        if (current is null) return "目标游戏已从库中移除，封面未修改。";
+        return AiGameSummary.From(current).Revision != original.Revision ? "游戏资料或封面已发生变化，请重新查找并确认，避免覆盖新修改。" : null;
+    }
+
+    public string? ApplyAiDraft(AiMetadataDraft draft)
+        => ApplyAiUpdate(draft, null, null);
+
+    public async Task<GameScanResult> ScanAiGamesAsync(string path, GameScanMode mode, CancellationToken token)
+    {
+        if (File.Exists(path))
+        {
+            var game = await Task.Run(() => PrepareGame(path), token);
+            token.ThrowIfCancellationRequested();
+            var matches = game is null || Games.Any(g => GameIdentity.AreSame(g.ExecutablePath, path)) ? Array.Empty<GameScanCandidate>() :
+                [new GameScanCandidate(path, game.Title, game.Engine, "用户提供的启动文件，请确认是游戏入口", 100)];
+            return new(matches, 1, 0, []);
+        }
+        var existing = Games.Select(g => g.ExecutablePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return await new GameScanService().ScanAsync(path, existing, token, mode);
+    }
+    public Task<GameImportResult> ImportAiGamesAsync(IReadOnlyList<string> paths, CancellationToken token)
+    {
+        if (HasUnsavedLibraryChanges || IsLibraryReadOnly || IsImporting) throw new InvalidOperationException("游戏库只读、正在导入或存在未保存修改，请处理后重试。");
+        return AddGamesAsync(paths, token);
+    }
     public OperationFeedback Feedback { get; } = new();
     public bool HasUnsavedLibraryChanges { get => _hasUnsavedLibraryChanges; private set { SetProperty(ref _hasUnsavedLibraryChanges, value); RetrySaveCommand?.RaiseCanExecuteChanged(); } }
     public RelayCommand RetrySaveCommand { get; }
@@ -261,6 +386,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public void CancelPendingRequests()
     {
+        _aiAssistant?.SaveSession();
         _aiAssistant?.Cancel();
         _settingsEditor?.CancelPendingTest();
     }
@@ -298,7 +424,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
         var query = SearchText.Trim();
         if (query.Length == 0) return true;
-        var searchable = string.Join(' ', game.Title, game.Engine, game.Description, string.Join(' ', game.Tags));
+        var searchable = string.Join(' ', game.Title, game.Engine, game.GameType, game.Description, string.Join(' ', game.Tags));
         return searchable.Contains(query, StringComparison.CurrentCultureIgnoreCase);
     }
 

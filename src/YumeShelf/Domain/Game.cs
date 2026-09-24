@@ -14,6 +14,8 @@ public sealed class Game : ObservableObject
     private string _engine = string.Empty;
     private string _description = string.Empty;
     private int? _releaseYear;
+    private string _releaseDate = "";
+    private string _gameType = "";
     private string? _coverPath;
     private bool _isFavorite;
     private DateTimeOffset? _lastPlayedAt;
@@ -28,7 +30,10 @@ public sealed class Game : ObservableObject
     public string LaunchArguments { get => _launchArguments; set => SetProperty(ref _launchArguments, value); }
     public string Engine { get => _engine; set => SetProperty(ref _engine, value); }
     public string Description { get => _description; set => SetProperty(ref _description, value); }
-    public int? ReleaseYear { get => _releaseYear; set => SetProperty(ref _releaseYear, value); }
+    public int? ReleaseYear { get => _releaseYear; set { if (SetProperty(ref _releaseYear, value)) OnPropertyChanged(nameof(ReleaseLabel)); } }
+    public string ReleaseDate { get => _releaseDate; set { if (SetProperty(ref _releaseDate, value)) OnPropertyChanged(nameof(ReleaseLabel)); } }
+    public string GameType { get => _gameType; set => SetProperty(ref _gameType, value); }
+    [JsonIgnore] public string ReleaseLabel => string.IsNullOrWhiteSpace(ReleaseDate) ? ReleaseYear?.ToString() ?? "未设定" : ReleaseDate;
     public string? CoverPath { get => _coverPath; set => SetProperty(ref _coverPath, value); }
     public bool IsFavorite { get => _isFavorite; set => SetProperty(ref _isFavorite, value); }
     public List<string> Tags { get; set; } = [];

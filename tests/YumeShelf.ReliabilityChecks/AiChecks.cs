@@ -13,8 +13,8 @@ internal static partial class Program
 {
     private const string DummyKey = "reliability-test-dummy-key";
     private static string Completion(string text, string finish = "stop") => JsonSerializer.Serialize(new { choices = new[] { new { message = new { role = "assistant", content = text }, finish_reason = finish } } });
-    private static Reply Route(string route, int delay = 0) => new(200, Completion(JsonSerializer.Serialize(new { route, clarification = (string?)null })), delay);
-    private static AppSettings AiSettings(string endpoint) => new() { AiApiBaseUrl = endpoint, AiApiKeyProtected = SecureSecretStore.Protect(DummyKey), AiModel = "test-model", AiTimeoutSeconds = 5 };
+    private static Reply Route(string route, int delay = 0) => new(200, Completion(JsonSerializer.Serialize(new { route, answer_basis = "general", clarification = (string?)null, observations = "合成游戏测试画面，标题为 YUME VISION TEST，无法确认真实作品。" })), delay);
+    private static AppSettings AiSettings(string endpoint) => new() { AiApiBaseUrl = endpoint, AiApiKeyProtected = SecureSecretStore.Protect(DummyKey), AiModel = "test-model", AiTimeoutSeconds = 5, AiRequestTimeoutSeconds = 5, AiTaskTimeoutSeconds = 5 };
     private static void Send(AiAssistantViewModel vm, string? query = null)
     {
         if (query is not null) vm.Query = query;
@@ -133,7 +133,9 @@ internal static partial class Program
         Check(!Directory.GetFiles(AppLog.DirectoryPath).Any(p => File.ReadAllText(p).Contains(DummyKey)), "diagnostic logs contain no dummy credential");
     }
 
-    private sealed record Reply(int Code, string Body, int Delay = 0, bool OmitLength = false, string? Location = null);
+    private sealed record StreamPart(string Text, int Delay = 0, Task? Release = null);
+    private sealed record Reply(int Code, string Body, int Delay = 0, bool OmitLength = false, string? Location = null,
+        string ContentType = "application/json", StreamPart[]? Parts = null, int FragmentSize = 8192, bool Chunked = false);
     // Scripted loopback HTTP only. No account credentials and no real AI service.
     private sealed class MockServer : IDisposable
     {
@@ -143,6 +145,8 @@ internal static partial class Program
         public ConcurrentQueue<string> Requests { get; } = new();
         public ConcurrentQueue<string> Headers { get; } = new();
         public string Endpoint { get; }
+        public MockServer(string[] tasks, params Reply[] replies)
+            : this(replies.Take(1).Concat([TaskPlan(tasks)]).Concat(replies.Skip(1)).ToArray()) { }
         public MockServer(params Reply[] replies)
         {
             _listener.Start(); Endpoint = $"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/v1";
@@ -153,6 +157,7 @@ internal static partial class Program
                     foreach (var reply in replies)
                     {
                         using var client = await _listener.AcceptTcpClientAsync(_stop.Token);
+                        client.NoDelay = true;
                         using var stream = client.GetStream();
                         try
                         {
@@ -169,12 +174,26 @@ internal static partial class Program
                             await stream.ReadExactlyAsync(body, _stop.Token);
                             Requests.Enqueue(Encoding.UTF8.GetString(body));
                             await Task.Delay(reply.Delay, _stop.Token);
-                            var bytes = Encoding.UTF8.GetBytes(reply.Body);
-                            var length = reply.OmitLength ? "" : $"Content-Length: {bytes.Length}\r\n";
+                            var parts = reply.Parts ?? [new StreamPart(reply.Body)];
+                            var length = reply.Chunked ? "Transfer-Encoding: chunked\r\n" : reply.OmitLength ? "" : $"Content-Length: {parts.Sum(x => Encoding.UTF8.GetByteCount(x.Text))}\r\n";
                             var location = reply.Location is null ? "" : $"Location: {reply.Location}\r\n";
-                            var responseHeader = Encoding.ASCII.GetBytes($"HTTP/1.1 {reply.Code} Result\r\nContent-Type: application/json\r\n{length}{location}Connection: close\r\n\r\n");
+                            var responseHeader = Encoding.ASCII.GetBytes($"HTTP/1.1 {reply.Code} Result\r\nContent-Type: {reply.ContentType}\r\n{length}{location}Connection: close\r\n\r\n");
                             await stream.WriteAsync(responseHeader, _stop.Token);
-                            await stream.WriteAsync(bytes, _stop.Token);
+                            foreach (var part in parts)
+                            {
+                                if (part.Release is not null) await part.Release.WaitAsync(_stop.Token);
+                                if (part.Delay > 0) await Task.Delay(part.Delay, _stop.Token);
+                                var bytes = Encoding.UTF8.GetBytes(part.Text);
+                                for (var offset = 0; offset < bytes.Length;)
+                                {
+                                    var count = Math.Min(reply.FragmentSize, bytes.Length - offset);
+                                    if (reply.Chunked) await stream.WriteAsync(Encoding.ASCII.GetBytes($"{count:X}\r\n"), _stop.Token);
+                                    await stream.WriteAsync(bytes.AsMemory(offset, count), _stop.Token);
+                                    if (reply.Chunked) await stream.WriteAsync("\r\n"u8.ToArray(), _stop.Token);
+                                    offset += count;
+                                }
+                            }
+                            if (reply.Chunked) await stream.WriteAsync("0\r\n\r\n"u8.ToArray(), _stop.Token);
                         }
                         catch (IOException) { /* Expected when the client cancels or stops at a byte limit. */ }
                     }

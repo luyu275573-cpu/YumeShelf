@@ -8,14 +8,16 @@
     <RootNamespace>YumeShelf</RootNamespace>
     <AssemblyName>YumeShelf</AssemblyName>
     <ApplicationIcon>Assets\YumeShelf.ico</ApplicationIcon>
-    <Version>0.2.0</Version>
+    <Version>0.3.0-preview.1</Version>
     <Product>YumeShelf</Product>
-    <Description>Windows 本地 Galgame 游戏库与 Yume 助手</Description>
+    <Description>YumeShelf · 一个更懂你的游戏盒子</Description>
     <Platforms>AnyCPU</Platforms>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Application\AI\Skills\*.md" />
     <Content Include="Assets\Backgrounds\*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\DefaultCover.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\YumeShelfIcon.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\YumeShelf.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

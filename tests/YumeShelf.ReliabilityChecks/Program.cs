@@ -9,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using YumeShelf.Application;
+using YumeShelf.Application.AI;
 using YumeShelf.Common;
 using YumeShelf.Domain;
 using YumeShelf.Infrastructure;
@@ -43,10 +44,21 @@ internal static partial class Program
         PresentationTraceSources.DataBindingSource.Switch.Level = SourceLevels.Error;
         try
         {
+            if (args.Length == 1 && args[0] == "--cover-source-check") { CoverSourceCheck(); return 0; }
             StorageChecks();
             ScanChecks();
+            ScanCoverageChecks();
             UiChecks();
+            StartupChecks();
             AiChecks();
+            AiStreamingChecks();
+            AiVisionChecks();
+            YumeUpgradeChecks();
+            AiCoverChecks();
+            AiLibraryAgentChecks();
+            AiLibraryTruthChecks();
+            AiFitChecks();
+            AiSessionAndFiltersChecks();
             if (args.Length == 0) throw new ArgumentException("Pass the built YumeShelf.TestGame.exe path.");
             LaunchChecks(Path.GetFullPath(args[0]));
             if (args.Length > 1) RealScan(args.Skip(1));
@@ -318,9 +330,19 @@ internal static partial class Program
         new JsonGameStore(path).Save([game]);
         var vm = Vm(path); vm.SelectedGame = vm.Games[0];
         vm.LaunchGameCommand.Execute(null); vm.RefreshLibraryCommand.Execute(null);
+        var current = vm.Games[0];
+        var aiDraft = new AiMetadataDraft(AiGameSummary.From(current), [new AiFieldSuggestion("Title", current.Title, "AI 审核后的测试游戏") { Accepted = true }], "隔离回归资料") { Covers = [CoverFixture] };
+        Check(vm.ApplyAiUpdate(aiDraft, CoverFixture, AiImageAttachment.FromFile(VisionFixture())) is null && ReferenceEquals(current, vm.Games[0]),
+            "combined card update preserves the running game instance and launch watcher");
+        var runningCover = current.CoverPath;
         PumpUntil(() => vm.Games[0].LastPlayedAt is not null, 12000);
         var saved = new JsonGameStore(path).Load(true)[0];
         Check(saved.LastLaunchStatus == "Completed" && saved.TotalPlaySeconds >= 1 && saved.LastPlayedAt is not null, "real process exit after refresh persists statistics on current game");
+        Check(saved.CoverPath == runningCover && File.Exists(runningCover) && vm.UndoAiDraft() is null &&
+            new JsonGameStore(path).Load(true)[0].TotalPlaySeconds == saved.TotalPlaySeconds,
+            "game exit preserves the downloaded cover and cover undo preserves final play statistics");
+        Check(saved.Title == "AI 审核后的测试游戏" && current.Title == game.Title && new JsonGameStore(path).Load(true)[0].TotalPlaySeconds == saved.TotalPlaySeconds,
+            "process exit preserves AI metadata and undo preserves newly recorded play time");
         vm.LaunchGameCommand.Execute(null);
         Check(vm.RemoveGame(vm.Games[0]), "running entry can be removed without deleting executable");
         var timer = Stopwatch.StartNew(); PumpUntil(() => timer.ElapsedMilliseconds > 3000);

@@ -12,6 +12,10 @@ public static class GameImageLoader
     public static BitmapImage Load(string path, int maxWidth = 640)
     {
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        return Load(file, maxWidth);
+    }
+    public static BitmapImage Load(Stream file, int maxWidth = 640)
+    {
         if (file.Length > 32 * 1024 * 1024) throw new InvalidDataException("图片超过 32 MB，请选择较小的图片。");
         var decoder = BitmapDecoder.Create(file, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None);
         var frame = decoder.Frames[0];

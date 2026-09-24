@@ -19,6 +19,7 @@ public partial class GameEditorWindow : Window
         InitializeComponent();
         TitleBox.Text = game.Title; EngineBox.Text = game.Engine;
         YearBox.Text = game.ReleaseYear?.ToString(CultureInfo.InvariantCulture) ?? "";
+        DateBox.Text = game.ReleaseDate; TypeBox.Text = game.GameType;
         ExecutableBox.Text = game.ExecutablePath;
         RelinkButton.IsEnabled = !isRunning;
         WorkingDirectoryBox.Text = game.WorkingDirectory;
@@ -72,8 +73,17 @@ public partial class GameEditorWindow : Window
                 year = parsed;
             }
             var newExe = Path.GetFullPath(ExecutableBox.Text);
+            var releaseDate = DateBox.Text.Trim();
+            if (releaseDate.Length > 0)
+            {
+                if (!DateTime.TryParseExact(releaseDate, ["yyyy", "yyyy-MM", "yyyy-MM-dd"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+                    || date.Year < 1900 || date.Year > 2100 || (year is not null && date.Year != year))
+                { ErrorText.Text = "请填写有效的发行日期，并与年份保持一致。"; return false; }
+                year = date.Year;
+            }
             var changed = !string.Equals(newExe, _game.ExecutablePath, StringComparison.OrdinalIgnoreCase);
             _game.Title = TitleBox.Text.Trim(); _game.Engine = EngineBox.Text.Trim(); _game.ReleaseYear = year;
+            _game.ReleaseDate = releaseDate; _game.GameType = TypeBox.Text.Trim();
             _game.ExecutablePath = newExe;
             if (changed) _game.RootPath = Path.GetDirectoryName(newExe)!;
             _game.WorkingDirectory = Path.GetFullPath(WorkingDirectoryBox.Text.Trim());

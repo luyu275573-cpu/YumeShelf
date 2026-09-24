@@ -4,13 +4,17 @@ Add-Type -AssemblyName System.Drawing
 $source = [System.Drawing.Image]::FromFile((Join-Path $PSScriptRoot "..\src\YumeShelf\Assets\YumeShelfIcon.png"))
 try {
     $frames = @()
-    foreach ($size in @(16, 32, 48, 256)) {
+    foreach ($size in @(16, 20, 24, 32, 40, 48, 64, 128, 256)) {
         $bitmap = New-Object System.Drawing.Bitmap($size, $size)
         $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
         $stream = New-Object System.IO.MemoryStream
         try {
             $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $graphics.DrawImage($source, 0, 0, $size, $size)
+            $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+            # Small native frames use less padding; preserve the transparent rounded corners.
+            $inset = if ($size -le 32) { $source.Width / 32 } else { 0 }
+            $graphics.DrawImage($source, [System.Drawing.Rectangle]::new(0, 0, $size, $size),
+                [single]$inset, [single]$inset, [single]($source.Width - 2 * $inset), [single]($source.Height - 2 * $inset), [System.Drawing.GraphicsUnit]::Pixel)
             $bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
             $frames += [pscustomobject]@{ Size = $size; Bytes = $stream.ToArray() }
         } finally { $graphics.Dispose(); $bitmap.Dispose(); $stream.Dispose() }
@@ -31,5 +35,5 @@ try {
         }
         foreach ($frame in $frames) { $writer.Write([byte[]]$frame.Bytes) }
     } finally { $writer.Dispose(); $file.Dispose() }
-    Write-Output "Generated application ICO (16/32/48/256): $target"
+    Write-Output "Generated application ICO (16/20/24/32/40/48/64/128/256): $target"
 } finally { $source.Dispose() }

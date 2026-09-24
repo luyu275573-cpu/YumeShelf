@@ -7,7 +7,7 @@ using System.Text.Json;
 
 namespace YumeShelf.Application.AI;
 
-public sealed record AiMessage(string Role, string Content);
+public sealed record AiMessage(string Role, string Content, AiImageAttachment? Image = null);
 public sealed record AiCompletionOptions(double Temperature = 0.2, int? MaxTokens = null, bool JsonObject = false);
 public static class AiLimits
 {
@@ -17,6 +17,8 @@ public static class AiLimits
     public const int AnswerCharacters = 12000;
     public const int ClarificationCharacters = 240;
     public const int VisibleMessages = 80;
+    public const int ImageEdge = 1600;
+    public const int ImageBytes = 4 * 1024 * 1024;
 }
 public sealed class AiConfigurationException(string message) : InvalidOperationException(message);
 public sealed class AiTruncatedException(string partialAnswer) : InvalidOperationException("回答达到长度上限，尚未完成。请缩小问题范围后重试。")
@@ -24,7 +26,7 @@ public sealed class AiTruncatedException(string partialAnswer) : InvalidOperatio
     public string PartialAnswer { get; } = partialAnswer;
 }
 
-public sealed class OpenAiCompatibleProvider
+public sealed partial class OpenAiCompatibleProvider
 {
     private static readonly HttpClient Client = new(new SocketsHttpHandler
     {
@@ -51,26 +53,50 @@ public sealed class OpenAiCompatibleProvider
 
     public async Task<string> CompleteAsync(string endpoint, string apiKey, string model, IReadOnlyList<AiMessage> messages, TimeSpan timeout, CancellationToken cancellationToken = default, AiCompletionOptions? options = null)
     {
+        using var request = CreateCompletionRequest(endpoint, apiKey, model, messages, options, streaming: false);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(timeout);
+        using var json = await SendAsync(request, deadline.Token).ConfigureAwait(false);
+        return ReadAnswer(json.RootElement);
+    }
+
+    private static HttpRequestMessage CreateCompletionRequest(string endpoint, string apiKey, string model, IReadOnlyList<AiMessage> messages, AiCompletionOptions? options, bool streaming)
+    {
         ValidateConfiguration(endpoint, model);
         if (messages.Sum(x => (long)x.Content.Length) > AiLimits.ContextCharacters + AiLimits.QuestionCharacters + 4000)
             throw new AiConfigurationException("问题和上下文过长，请精简后重试。");
+        if (messages.Count(x => x.Image is not null) > 1 || messages.Any(x => x.Image is not null && x.Role != "user"))
+            throw new AiConfigurationException("每次仅支持在一条用户消息中附加一张图片。");
         options ??= new AiCompletionOptions();
         var payload = new Dictionary<string, object?>
         {
             ["model"] = model,
-            ["messages"] = messages.Select(x => new { role = x.Role, content = x.Content }).ToArray(),
+            ["messages"] = messages.Select(x => new
+            {
+                role = x.Role,
+                content = x.Image is null ? (object)x.Content : new object[]
+                {
+                    new { type = "text", text = x.Content },
+                    new { type = "image_url", image_url = new { url = x.Image.DataUrl } }
+                }
+            }).ToArray(),
             ["temperature"] = options.Temperature
         };
         if (options.MaxTokens is int maxTokens) payload["max_tokens"] = maxTokens;
         if (options.JsonObject) payload["response_format"] = new { type = "json_object" };
-        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(ValidateEndpoint(endpoint), "chat/completions"))
+        if (streaming) payload["stream"] = true;
+        var request = new HttpRequestMessage(HttpMethod.Post, new Uri(ValidateEndpoint(endpoint), "chat/completions"))
         { Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json") };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(timeout);
-        using var json = await SendAsync(request, deadline.Token).ConfigureAwait(false);
-        if (json.RootElement.ValueKind != JsonValueKind.Object
-            || !json.RootElement.TryGetProperty("choices", out var choices) || choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0
+        request.Options.Set(new HttpRequestOptionsKey<bool>("Yume.HasImage"), messages.Any(x => x.Image is not null));
+        if (streaming) request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        return request;
+    }
+
+    private static string ReadAnswer(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("choices", out var choices) || choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0
             || choices[0].ValueKind != JsonValueKind.Object
             || !choices[0].TryGetProperty("message", out var message) || message.ValueKind != JsonValueKind.Object
             || !message.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(content.GetString()))
@@ -106,6 +132,12 @@ public sealed class OpenAiCompatibleProvider
     private static async Task<JsonDocument> SendAsync(HttpRequestMessage request, CancellationToken token)
     {
         using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+        ValidateResponse(response);
+        return await ReadJsonAsync(response, token).ConfigureAwait(false);
+    }
+
+    private static void ValidateResponse(HttpResponseMessage response)
+    {
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException(response.StatusCode switch
             {
@@ -113,10 +145,17 @@ public sealed class OpenAiCompatibleProvider
                 HttpStatusCode.Forbidden => "当前 Key 没有调用权限，请检查服务权限。",
                 HttpStatusCode.NotFound => "API 路径或模型不存在，请检查服务地址与模型名称。",
                 HttpStatusCode.TooManyRequests => "服务限流或配额不足，请稍后重试或检查余额。",
+                _ when (int)response.StatusCode is 400 or 413 or 415 or 422
+                    && response.RequestMessage?.Options.TryGetValue(new HttpRequestOptionsKey<bool>("Yume.HasImage"), out var hasImage) == true && hasImage
+                    => "服务未接受识图请求，请在设置中检查识图模型是否支持 image_url 图片输入，或尝试裁剪、缩小图片。",
                 _ when (int)response.StatusCode is >= 300 and < 400 => "服务要求重定向，请直接填写最终 HTTPS API 地址。",
                 _ => $"AI 服务返回 HTTP {(int)response.StatusCode}，请稍后重试。"
             });
         if (response.Content.Headers.ContentLength > AiLimits.ResponseBytes) throw new InvalidOperationException("服务响应过大，已中止读取。");
+    }
+
+    private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response, CancellationToken token)
+    {
         using var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
         using var buffer = new MemoryStream();
         var chunk = new byte[8192];

@@ -19,12 +19,15 @@ try {
     $testGame = Join-Path $artifacts "bin\YumeShelf.TestGame\release\YumeShelf.TestGame.exe"
     Invoke-Dotnet -Arguments (@((Join-Path $artifacts "bin\YumeShelf.ReliabilityChecks\release\YumeShelf.ReliabilityChecks.dll"), $testGame) + $ScanRoots)
     Invoke-Dotnet -Arguments @("publish", "src\YumeShelf\YumeShelf.csproj", "--configuration", "Release", "--artifacts-path", $artifacts, "--self-contained", "false", "--output", $publish, "--nologo", "-warnaserror")
-    foreach ($asset in @("YumeShelf.exe", "YumeShelf.dll", "YumeShelf.runtimeconfig.json", "Assets\DefaultCover.png", "Assets\YumeShelfIcon.png", "Assets\Backgrounds\pink.png", "Assets\Backgrounds\blue.png", "Assets\Backgrounds\yellow.png")) {
+    foreach ($asset in @("YumeShelf.exe", "YumeShelf.dll", "YumeShelf.runtimeconfig.json", "Assets\DefaultCover.png", "Assets\YumeShelfIcon.png", "Assets\YumeShelf.ico", "Assets\Backgrounds\pink.png", "Assets\Backgrounds\blue.png", "Assets\Backgrounds\yellow.png")) {
         if (-not (Test-Path -LiteralPath (Join-Path $publish $asset))) { throw "Missing publish asset: $asset" }
     }
     $exe = Join-Path $publish "YumeShelf.exe"
     $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
-    if ($version.FileVersion -ne "0.2.0.0") { throw "Missing native version resource." }
+    $projectXml = New-Object System.Xml.XmlDocument
+    $projectXml.Load((Join-Path $projectRoot "src\YumeShelf\YumeShelf.csproj"))
+    $expectedVersion = ([string]$projectXml.Project.PropertyGroup.Version).Split('-')[0] + '.0'
+    if ($version.FileVersion -ne $expectedVersion) { throw "Missing native version resource." }
     Add-Type -AssemblyName System.Drawing
     $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe)
     try {

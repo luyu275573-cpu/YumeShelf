@@ -1,37 +1,154 @@
 <UserControl x:Class="YumeShelf.Presentation.AiAssistantPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:common="clr-namespace:YumeShelf.Common"
              Background="{DynamicResource WindowBackground}" Foreground="{DynamicResource PrimaryTextBrush}">
-    <Grid Margin="24,28,24,22">
+    <UserControl.Resources><common:CoverImageConverter x:Key="CoverPreviewConverter"/></UserControl.Resources>
+    <Grid Margin="24,12,24,12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/><RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <StackPanel Margin="0,0,0,20">
-            <TextBlock Text="Yume · Galgame 助手" FontSize="24" FontWeight="SemiBold"/>
-            <TextBlock Text="专注 Galgame、视觉小说与 YumeShelf 使用" Foreground="{DynamicResource MutedTextBrush}" Margin="0,6,0,0"/>
+        <StackPanel Margin="0,0,0,10">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="新对话" ToolTip="清除本机保存的当前文字会话；待发送内容保留" Command="{Binding NewConversationCommand}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Right"/>
+                <TextBlock Text="Yume · 游戏库助手" FontSize="22" FontWeight="SemiBold"/>
+            </DockPanel>
+            <TextBlock Text="直接说出作品名或提供游戏路径，Yume 会查找并准备结果，确认后保存。" Foreground="{DynamicResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"/>
+            <TextBlock Text="文字会话保存在本机；图片和待确认操作不跨重启保留。" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,3,0,0"/>
         </StackPanel>
-        <Border Grid.Row="1" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="18">
+        <Border Grid.Row="1" Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="12">
             <ScrollViewer x:Name="ConversationScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" ScrollChanged="ConversationScrolled">
+                <StackPanel>
                 <ItemsControl ItemsSource="{Binding Conversation}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Border Background="{DynamicResource Surface2Brush}" CornerRadius="12" Padding="14" Margin="0,0,0,12">
                                 <StackPanel>
                                     <TextBlock Text="{Binding RoleLabel}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11"/>
+                                    <Image Source="{Binding ImagePreview}" MaxWidth="240" MaxHeight="135" HorizontalAlignment="Left" Stretch="Uniform" Margin="0,8,0,0"
+                                           Visibility="{Binding HasImage, Converter={StaticResource BooleanToVisibilityConverter}}" AutomationProperties.Name="本条消息附图"/>
                                     <TextBox Text="{Binding Content, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Padding="0" Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,6,0,0" AutomationProperties.Name="对话消息"/>
                                     <TextBlock Text="{Binding State}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                                    <ItemsControl ItemsSource="{Binding Sources}"><ItemsControl.ItemTemplate><DataTemplate>
+                                        <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="8" Margin="0,8,0,0"><StackPanel>
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                            <TextBox Text="{Binding Url, Mode=OneWay}" IsReadOnly="True" Foreground="{DynamicResource PrimaryTextBrush}" Background="Transparent" BorderThickness="0"/>
+                                            <TextBlock Text="{Binding RetrievedAt, StringFormat=取得时间：{0:yyyy-MM-dd HH:mm} UTC}" FontSize="10" Foreground="{DynamicResource MutedTextBrush}"/>
+                                        </StackPanel></Border>
+                                    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
                                 </StackPanel>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <Border Visibility="{Binding HasReview, Converter={StaticResource BooleanToVisibilityConverter}}" Background="{DynamicResource Surface2Brush}" CornerRadius="12" Padding="14" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="{Binding ReviewTitle}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                        <ItemsControl ItemsSource="{Binding Research.Sources}" Visibility="{Binding HasSourceChoices, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,8,0,8">
+                            <ItemsControl.ItemTemplate><DataTemplate>
+                                <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,0,0,6">
+                                    <StackPanel><TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                        <TextBox Text="{Binding Url, Mode=OneWay}" IsReadOnly="True" Background="Transparent" Foreground="{DynamicResource MutedTextBrush}" BorderThickness="0" Padding="0" Margin="0,4,0,4"/>
+                                        <Button Content="使用这份资料" Command="{Binding DataContext.SelectResearchSourceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate></ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="{Binding Draft.Reason}" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,8,0,12"/>
+                        <ItemsControl ItemsSource="{Binding Draft.Fields}" IsEnabled="{Binding CanEditInput}">
+                            <ItemsControl.ItemTemplate><DataTemplate>
+                                <StackPanel Margin="0,0,0,12">
+                                    <CheckBox Content="{Binding Label}" Foreground="{DynamicResource PrimaryTextBrush}" IsChecked="{Binding Accepted}"/>
+                                    <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <StackPanel Margin="0,0,5,0"><TextBlock Text="当前" FontSize="11" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,4"/>
+                                            <TextBox Text="{Binding Original, Mode=OneWay}" Style="{StaticResource EditorTextBox}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="120" VerticalScrollBarVisibility="Auto"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="更新为" FontSize="11" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,4"/>
+                                            <TextBox Text="{Binding ProposedDisplay, Mode=OneWay}" Style="{StaticResource EditorTextBox}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="120" VerticalScrollBarVisibility="Auto"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </DataTemplate></ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <ItemsControl ItemsSource="{Binding CoverDraft.Candidates}" Visibility="{Binding HasCoverChoices, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ItemsControl.ItemTemplate><DataTemplate>
+                                <StackPanel Margin="0,0,0,8"><TextBlock Text="{Binding Source.Title}" TextWrapping="Wrap"/>
+                                    <Button Content="选用这张封面" Command="{Binding DataContext.PreviewCoverCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,5,0,0"/>
+                                </StackPanel>
+                            </DataTemplate></ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Visibility="{Binding HasCoverPreview, Converter={StaticResource BooleanToVisibilityConverter}}" IsVisibleChanged="CoverPreviewVisible" Margin="0,0,0,12">
+                            <CheckBox Content="更新封面" IsChecked="{Binding AcceptCover}" IsEnabled="{Binding CanEditInput}" Foreground="{DynamicResource PrimaryTextBrush}"/>
+                            <Grid Margin="0,8,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,5,0"><TextBlock Text="当前" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,0,0,5"/>
+                                    <Image Source="{Binding CoverDraft.Original.CoverPath, Converter={StaticResource CoverPreviewConverter}}" Height="140" Stretch="Uniform" AutomationProperties.Name="更换前封面"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="更新为" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,0,0,5"/>
+                                    <Image Source="{Binding CoverPreview.Preview}" Height="140" Stretch="Uniform" AutomationProperties.Name="候选封面预览"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                        <WrapPanel>
+                            <Button x:Name="ApplyCoverButton" Content="确认保存选中内容" Command="{Binding ApplyReviewCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,4"/>
+                            <Button Content="放弃本次修改" Command="{Binding DismissReviewCommand}" Style="{StaticResource SecondaryButton}" Margin="0,0,0,4"/>
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+                <Border Visibility="{Binding HasScanDraft, Converter={StaticResource BooleanToVisibilityConverter}}" Background="{DynamicResource Surface2Brush}" CornerRadius="12" Padding="14" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="发现本地游戏 · 确认入库" FontSize="16" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding ScanDraft.Result.Summary}" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" Margin="0,6,0,8"/>
+                        <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto"><ItemsControl ItemsSource="{Binding ScanDraft.Result.Candidates}" IsEnabled="{Binding CanEditInput}">
+                            <ItemsControl.ItemTemplate><DataTemplate>
+                                <StackPanel Margin="0,0,0,12">
+                                    <CheckBox IsChecked="{Binding IsSelected}" Foreground="{DynamicResource PrimaryTextBrush}"><TextBlock Text="{Binding Title}" TextWrapping="Wrap"/></CheckBox>
+                                    <TextBlock Text="{Binding Engine}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="20,4,0,0"/>
+                                    <TextBlock Text="{Binding Reason}" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="20,2,0,0"/>
+                                    <TextBox Text="{Binding ExecutablePath, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Background="Transparent" Foreground="{DynamicResource MutedTextBrush}" BorderThickness="0" FontSize="11" Margin="20,2,0,0"/>
+                                </StackPanel>
+                            </DataTemplate></ItemsControl.ItemTemplate>
+                        </ItemsControl></ScrollViewer>
+                        <WrapPanel><Button Content="确认添加选中游戏" Command="{Binding ApplyImportCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,4"/>
+                            <Button Content="放弃入库" Command="{Binding DismissImportCommand}" Style="{StaticResource SecondaryButton}" Margin="0,0,0,4"/>
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+                <Border Visibility="{Binding HasDocument, Converter={StaticResource BooleanToVisibilityConverter}}" Background="{DynamicResource Surface2Brush}" CornerRadius="12" Padding="14" Margin="0,0,0,12">
+                    <StackPanel><TextBlock Text="{Binding DocumentEvidence}" FontWeight="SemiBold"/>
+                        <TextBox Text="{Binding Document, Mode=OneWay}" Style="{StaticResource EditorTextBox}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="320" VerticalScrollBarVisibility="Auto" Margin="0,8,0,10"/>
+                        <Button Content="导出 Markdown / HTML" Command="{Binding ExportDocumentCommand}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left"/>
+                        <Button Content="放弃资料草稿" Command="{Binding DismissDocumentCommand}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Button Content="撤销上次卡片修改" Command="{Binding UndoDraftCommand}" Visibility="{Binding CanUndoReview, Converter={StaticResource BooleanToVisibilityConverter}}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,0,0,8"/>
+                </StackPanel>
             </ScrollViewer>
         </Border>
-        <TextBox Grid.Row="2" x:Name="QueryEditor" Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}"
-                 IsReadOnly="{Binding IsBusy}" Style="{StaticResource EditorTextBox}" AcceptsReturn="True" MaxLength="6000"
-                 TextWrapping="Wrap" MinHeight="82" MaxHeight="140" VerticalScrollBarVisibility="Auto"
-                 Margin="0,16,0,12" AutomationProperties.Name="向 Yume 提问" ToolTip="Enter 发送，Shift+Enter 换行；最多 6000 字符"/>
+        <StackPanel Grid.Row="2" Margin="0,8,0,8">
+            <DockPanel Margin="0,0,0,8">
+                <Button x:Name="ChooseImageButton" Content="选择图片" Click="ChooseImageClicked" IsEnabled="{Binding CanEditInput}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,0,12,0"/>
+                <TextBlock Text="Ctrl+V 粘贴截图 · Enter 发送 · Shift+Enter 换行" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            </DockPanel>
+            <Border x:Name="AttachmentPreview" Visibility="{Binding HasImage, Converter={StaticResource BooleanToVisibilityConverter}}"
+                    Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="10" Margin="0,0,0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Image Source="{Binding Image.Preview}" Height="56" Stretch="Uniform" Margin="0,0,12,0" AutomationProperties.Name="待发送图片预览"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Image.Name}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" ToolTip="{Binding Image.Name}"/>
+                        <TextBlock Text="{Binding Image.Details}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,3,0,0"/>
+                        <TextBlock Text="{Binding VisionModelHint}" TextTrimming="CharacterEllipsis" ToolTip="{Binding VisionModelHint}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,3,0,0"/>
+                        <TextBlock Text="发送后交给配置的 AI 服务识别" ToolTip="{Binding ImageSendHint}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,3,0,0"/>
+                    </StackPanel>
+                    <Button Grid.Column="2" Content="移除" Command="{Binding RemoveImageCommand}" Style="{StaticResource SecondaryButton}" VerticalAlignment="Center" Margin="10,0,0,0" AutomationProperties.Name="移除待发送图片"/>
+                </Grid>
+            </Border>
+            <TextBox x:Name="QueryEditor" Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}"
+                     IsReadOnly="{Binding IsInputLocked}" Style="{StaticResource EditorTextBox}" AcceptsReturn="True" MaxLength="6000"
+                     TextWrapping="Wrap" MinHeight="60" MaxHeight="110" VerticalScrollBarVisibility="Auto"
+                     AutomationProperties.Name="向 Yume 提问" ToolTip="发送后，问题、附图与任务所需游戏摘要会交给配置的 AI 服务；联网检索使用 VNDB，不上传游戏文件。"/>
+        </StackPanel>
         <Grid Grid.Row="3">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBlock Text="{Binding Status}" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center"

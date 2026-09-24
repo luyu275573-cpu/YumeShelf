@@ -15,7 +15,11 @@
                     <StackPanel Margin="0,0,12,0"><TextBlock Text="引擎"/><TextBox x:Name="EngineBox" MaxLength="80" Style="{StaticResource EditorTextBox}" Margin="0,5,0,0" AutomationProperties.Name="游戏引擎"/></StackPanel>
                     <StackPanel Grid.Column="1"><TextBlock Text="发行年份"/><TextBox x:Name="YearBox" MaxLength="4" Style="{StaticResource EditorTextBox}" Margin="0,5,0,0" AutomationProperties.Name="发行年份"/></StackPanel>
                 </Grid>
-                <TextBlock Text="启动文件" Margin="0,14,0,5"/>
+                <Grid Margin="0,14,0,14"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,12,0"><TextBlock Text="发行日期（可只填年月）"/><TextBox x:Name="DateBox" MaxLength="10" Style="{StaticResource EditorTextBox}" Margin="0,5,0,0" AutomationProperties.Name="发行日期" ToolTip="YYYY、YYYY-MM 或 YYYY-MM-DD"/></StackPanel>
+                    <StackPanel Grid.Column="1"><TextBlock Text="游戏类型"/><TextBox x:Name="TypeBox" MaxLength="60" Style="{StaticResource EditorTextBox}" Margin="0,5,0,0" AutomationProperties.Name="游戏类型" ToolTip="例如：视觉小说、ACT、SLG、RPG"/></StackPanel>
+                </Grid>
+                <TextBlock Text="启动文件" Margin="0,0,0,5"/>
                 <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <TextBox x:Name="ExecutableBox" IsReadOnly="True" Style="{StaticResource EditorTextBox}" AutomationProperties.Name="启动文件路径"/>
                     <Button x:Name="RelinkButton" Grid.Column="1" Content="重新选择" Click="ChooseExecutable_Click" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"/>

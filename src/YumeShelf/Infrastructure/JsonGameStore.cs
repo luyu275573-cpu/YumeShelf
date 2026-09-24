@@ -129,6 +129,8 @@ public sealed class JsonGameStore
                 game.Title = string.IsNullOrWhiteSpace(game.Title) ? Path.GetFileNameWithoutExtension(game.ExecutablePath) : game.Title;
                 game.Engine ??= "未知引擎";
                 game.Description ??= string.Empty;
+                game.ReleaseDate ??= string.Empty;
+                game.GameType ??= string.Empty;
                 game.LaunchArguments ??= string.Empty;
                 game.Tags = game.Tags?.Where(x => !string.IsNullOrWhiteSpace(x)).ToList() ?? [];
                 game.TotalPlaySeconds = Math.Max(0, game.TotalPlaySeconds);

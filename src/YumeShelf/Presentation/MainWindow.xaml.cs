@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using YumeShelf.Common;
 using System.Windows.Media.Imaging;
+using System.Windows.Input;
 
 namespace YumeShelf.Presentation;
 
@@ -16,13 +17,27 @@ public partial class MainWindow : Window
     private int _transitionVersion;
     private bool _hasNativeWindow;
 
-    public MainWindow() : this(new MainWindowViewModel()) { }
+    public MainWindow() : this(new MainWindowViewModel(), showIntroduction: true) { }
 
-    public MainWindow(MainWindowViewModel viewModel, Func<MessageBoxResult>? choosePendingClose = null)
+    public MainWindow(MainWindowViewModel viewModel, Func<MessageBoxResult>? choosePendingClose = null, bool showIntroduction = false)
     {
         InitializeComponent();
-        Icon = LoadIcon();
-        BrandIconImage.Source = Icon;
+        var brandIcon = LoadIcon();
+        var nativeIconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "YumeShelf.ico");
+        Icon = File.Exists(nativeIconPath) ? BitmapFrame.Create(new Uri(nativeIconPath)) : brandIcon;
+        BrandIconImage.Source = brandIcon;
+        StartupIntroduction.SetIcon(brandIcon);
+        if (showIntroduction)
+        {
+            ShellContent.IsEnabled = false;
+            StartupIntroduction.Visibility = Visibility.Visible;
+            StartupIntroduction.Finished += (_, _) =>
+            {
+                ShellContent.IsEnabled = true;
+                ShellContent.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
+            };
+            ContentRendered += StartIntroduction;
+        }
         SourceInitialized += (_, _) => { _hasNativeWindow = true; NativeTitleBar.Sync(this); };
         DataContextChanged += (_, args) =>
         {
@@ -45,6 +60,8 @@ public partial class MainWindow : Window
         };
         Closed += (_, _) =>
         {
+            ContentRendered -= StartIntroduction;
+            StartupIntroduction.Stop();
             _transitionVersion++;
             if (DataContext is MainWindowViewModel current)
             {
@@ -53,6 +70,12 @@ public partial class MainWindow : Window
             }
         };
         DataContext = viewModel;
+    }
+
+    private void StartIntroduction(object? sender, EventArgs e)
+    {
+        ContentRendered -= StartIntroduction;
+        StartupIntroduction.Start(SystemParameters.ClientAreaAnimation);
     }
 
     private void ViewModelChanged(object? sender, PropertyChangedEventArgs args)

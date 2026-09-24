@@ -27,12 +27,14 @@ public partial class AddGameWindow : Window
         _addBatch = addBatch;
         DataContext = _vm;
         InitializeComponent();
+        _vm.Candidates.CollectionChanged += (_, _) => { if (!_vm.IsScanning) UpdateActionLabel(); };
         _vm.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName == nameof(AddGameViewModel.SearchRoot))
+            if (args.PropertyName is nameof(AddGameViewModel.SearchRoot) or nameof(AddGameViewModel.ScanMode))
             {
                 _vm.Candidates.Clear();
-                _vm.Status = "搜索范围已更改，请重新扫描。";
+                _vm.Feedback.DismissCommand.Execute(null);
+                _vm.Status = "搜索范围或扫描模式已更改，请重新扫描。";
                 UpdateActionLabel();
             }
         };
@@ -70,7 +72,18 @@ public partial class AddGameWindow : Window
             await AddSelectedAsync(_vm.Candidates.Where(x => x.IsSelected).Select(x => x.ExecutablePath).ToArray());
             return;
         }
+        await ScanAsync();
+    }
+
+    private async void RescanButton_Click(object sender, RoutedEventArgs e) => await ScanAsync();
+
+    private async Task ScanAsync()
+    {
+        if (_vm.IsScanning || _closed || ModeTabs.SelectedIndex != 0) return;
         if (!Directory.Exists(_vm.SearchRoot)) { ShowResult("搜索路径不存在，请选择有效文件夹。", FeedbackKind.Error); return; }
+        var root = _vm.SearchRoot;
+        var mode = _vm.ScanMode;
+        _vm.Candidates.Clear();
         _vm.IsScanning = true;
         UpdateActionLabel();
         ShowResult("正在扫描所选目录，请稍候…", FeedbackKind.Progress);
@@ -78,10 +91,10 @@ public partial class AddGameWindow : Window
         _scanCancellation = cancellation;
         try
         {
-            var found = await _scanner.ScanAsync(_vm.SearchRoot, new HashSet<string>(StringComparer.OrdinalIgnoreCase), cancellation.Token);
+            var found = await _scanner.ScanAsync(root, new HashSet<string>(StringComparer.OrdinalIgnoreCase), cancellation.Token, mode);
             if (_closed) return;
             foreach (var item in found) _vm.Candidates.Add(item);
-            ShowResult(found.Summary + (found.Count == 0 ? "可以更换目录或使用手动添加。" : "请勾选后点击“确认添加”。"), found.IsIncomplete ? FeedbackKind.Warning : FeedbackKind.Info);
+            ShowResult(found.Summary + (found.Count == 0 ? "可切换扫描模式、更换目录或手动添加。" : "标记“待确认”的候选未预选，请核对并勾选后点击“确认添加”。"), found.IsIncomplete ? FeedbackKind.Warning : FeedbackKind.Info);
         }
         catch (OperationCanceledException) { if (!_closed) ShowResult("扫描已停止，未添加游戏。", FeedbackKind.Info); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)

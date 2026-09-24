@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:YumeShelf.Presentation"
         xmlns:common="clr-namespace:YumeShelf.Common"
-        Title="YumeShelf · 本地游戏库"
+        Title="YumeShelf"
         Width="1200"
         Height="760"
         MinWidth="900"
@@ -75,7 +75,8 @@
             </Style.Triggers>
         </Style>
     </Window.Resources>
-    <Grid Background="{DynamicResource WindowBackground}" ClipToBounds="True">
+    <Grid>
+    <Grid x:Name="ShellContent" Background="{DynamicResource WindowBackground}" ClipToBounds="True">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="212" />
             <ColumnDefinition Width="*" />
@@ -100,13 +101,13 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="9,0,0,24">
-                    <Border Width="30" Height="30" CornerRadius="7" Background="White" ClipToBounds="True">
-                        <Image x:Name="BrandIconImage" Stretch="UniformToFill" />
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="9,0,0,16">
+                    <Border Width="44" Height="44" CornerRadius="10" Background="Transparent">
+                        <Image x:Name="BrandIconImage" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True" />
                     </Border>
                     <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="YumeShelf" Foreground="{DynamicResource PrimaryTextBrush}" FontSize="16" FontWeight="SemiBold" />
-                        <TextBlock Text="本地游戏库" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" />
+                        <TextBlock Text="你的智能游戏盒子" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" />
                     </StackPanel>
                 </StackPanel>
 
@@ -326,13 +327,14 @@
                         </Grid>
                     </Border>
                     <TextBlock Grid.Row="2" Text="{Binding SelectedGame.Title, TargetNullValue=未选择游戏, FallbackValue=未选择游戏}" TextWrapping="Wrap" MaxHeight="62" TextTrimming="CharacterEllipsis" ToolTip="{Binding SelectedGame.Title}" Foreground="{DynamicResource PrimaryTextBrush}" FontSize="22" FontWeight="SemiBold" Margin="0,17,0,3" />
-                    <TextBlock Grid.Row="3" Foreground="{DynamicResource MutedTextBrush}" FontSize="12"><Run Text="{Binding SelectedGame.Engine, TargetNullValue=未知引擎}" /><Run Text="  ·  " /><Run Text="{Binding SelectedGame.ReleaseYear, TargetNullValue=未设定}" /></TextBlock>
+                    <TextBlock Grid.Row="3" Foreground="{DynamicResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap"><Run Text="{Binding SelectedGame.Engine, TargetNullValue=未知引擎}" /><Run Text="  ·  " /><Run Text="{Binding SelectedGame.ReleaseLabel, Mode=OneWay, TargetNullValue=未设定}" /></TextBlock>
                     <ScrollViewer Grid.Row="4" Margin="0,14,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
                         <WrapPanel>
                             <Border Background="{DynamicResource Surface2Brush}" CornerRadius="4" Padding="7,4" Margin="0,0,6,6"><TextBlock Text="本地" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" /></Border>
                             <Border Background="{DynamicResource Surface2Brush}" CornerRadius="4" Padding="7,4" Margin="0,0,6,6"><TextBlock Text="{Binding SelectedGame.Availability, TargetNullValue=未选择游戏, FallbackValue=未选择游戏}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" /></Border>
                             <Border Background="{DynamicResource Surface2Brush}" CornerRadius="4" Padding="7,4" Margin="0,0,6,6"><TextBlock Text="Windows" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" /></Border>
                         </WrapPanel>
+                        <TextBlock Text="{Binding SelectedGame.GameType, StringFormat=类型：{0}}" Foreground="{DynamicResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
                         <TextBlock Text="{Binding SelectedGame.Description, TargetNullValue=选择一个游戏查看详情。, FallbackValue=选择一个游戏查看详情。}" Foreground="{DynamicResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
                         <TextBlock Text="{Binding SelectedGame.RootPath}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,16,0,0" ToolTip="{Binding SelectedGame.RootPath}" />
                     </StackPanel></ScrollViewer>
@@ -354,5 +356,7 @@
         </Grid>
         <local:FeedbackToast x:Name="OperationToast" Grid.Column="1" Grid.RowSpan="2" Panel.ZIndex="100"
                              DataContext="{Binding Feedback}" Margin="20"/>
+    </Grid>
+    <local:StartupIntro x:Name="StartupIntroduction" Visibility="Collapsed" Panel.ZIndex="200"/>
     </Grid>
 </Window>

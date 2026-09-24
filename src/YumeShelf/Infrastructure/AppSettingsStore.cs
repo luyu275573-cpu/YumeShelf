@@ -7,6 +7,7 @@ public sealed class AppSettingsStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly string _settingsPath;
+    public string SessionPath => Path.ChangeExtension(_settingsPath, ".yume-session");
 
     public AppSettingsStore(string? settingsPath = null)
     {
@@ -47,8 +48,11 @@ public sealed record AppSettings
     public bool NightMode { get; init; }
     public string AiApiBaseUrl { get; init; } = "https://api.openai.com/v1";
     public string AiModel { get; init; } = "gpt-4o-mini";
+    public string AiVisionModel { get; init; } = string.Empty;
     public string AiApiKeyProtected { get; init; } = string.Empty;
     public int AiTimeoutSeconds { get; init; } = 30;
+    public int AiRequestTimeoutSeconds { get; init; } = 60;
+    public int AiTaskTimeoutSeconds { get; init; } = 180;
 
     public AppSettings Normalize() => this with
     {
@@ -62,6 +66,10 @@ public sealed record AppSettings
         ,
         AiModel = string.IsNullOrWhiteSpace(AiModel) ? "gpt-4o-mini" : AiModel.Trim()
         ,
-        AiTimeoutSeconds = Math.Clamp(AiTimeoutSeconds, 5, 120)
+        AiVisionModel = AiVisionModel?.Trim() ?? string.Empty
+        ,
+        AiTimeoutSeconds = Math.Clamp(AiTimeoutSeconds, 5, 120),
+        AiRequestTimeoutSeconds = Math.Clamp(AiRequestTimeoutSeconds, 5, 120),
+        AiTaskTimeoutSeconds = Math.Clamp(AiTaskTimeoutSeconds, 5, 600)
     };
 }

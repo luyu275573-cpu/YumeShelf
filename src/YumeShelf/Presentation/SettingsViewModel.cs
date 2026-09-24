@@ -33,6 +33,8 @@ public sealed class SettingsViewModel : ObservableObject
         _credentialOrigin = Origin(_draft.AiApiBaseUrl);
         TestAiConnectionCommand = new RelayCommand(_ => _ = TestAiConnectionAsync(), _ => !IsAiTesting);
         TestAiModelCommand = new RelayCommand(_ => _ = TestAiModelAsync(), _ => !IsAiTesting);
+        TestAiVisionCommand = new RelayCommand(_ => _ = TestCapabilityAsync("vision"), _ => !IsAiTesting);
+        TestAiProtocolCommand = new RelayCommand(_ => _ = TestCapabilityAsync("protocol"), _ => !IsAiTesting);
         try { PreviewImage = BackgroundImageLoader.Load(_draft.BackgroundImagePath ?? BuiltInBackgrounds.Resolve(_draft.ColorPalette, _draft.NightMode)); }
         catch (Exception exception) when (IsImageError(exception))
         {
@@ -42,8 +44,11 @@ public sealed class SettingsViewModel : ObservableObject
         {
             if (args.PropertyName is nameof(ColorPalette) or nameof(NightMode) or nameof(BackgroundFileName)
                 or nameof(BackgroundOpacity) or nameof(BackgroundBlur) or nameof(PageTransparency)
-                or nameof(SimpleLayout) or nameof(AiApiBaseUrl) or nameof(AiModel) or nameof(AiTimeoutSeconds) or nameof(AiApiKey))
+                or nameof(SimpleLayout) or nameof(AiApiBaseUrl) or nameof(AiModel) or nameof(AiVisionModel) or nameof(AiTimeoutSeconds) or nameof(AiApiKey)
+                or nameof(AiRequestTimeoutSeconds) or nameof(AiTaskTimeoutSeconds))
                 SaveNotice = "有未保存的修改，点击确认后生效";
+            if (args.PropertyName is nameof(AiApiBaseUrl) or nameof(AiModel) or nameof(AiVisionModel) or nameof(AiApiKey))
+            { CancelPendingTest(); OnPropertyChanged(nameof(CapabilitySummary)); }
         };
     }
 
@@ -83,10 +88,14 @@ public sealed class SettingsViewModel : ObservableObject
         }
     }
     public string AiModel { get => _draft.AiModel; set { _draft = _draft with { AiModel = value }; OnPropertyChanged(); } }
+    public string AiVisionModel { get => _draft.AiVisionModel; set { _draft = _draft with { AiVisionModel = value }; OnPropertyChanged(); } }
     public int AiTimeoutSeconds { get => _draft.AiTimeoutSeconds; set { _draft = _draft with { AiTimeoutSeconds = value }; OnPropertyChanged(); } }
+    public int AiRequestTimeoutSeconds { get => _draft.AiRequestTimeoutSeconds; set { _draft = _draft with { AiRequestTimeoutSeconds = value }; OnPropertyChanged(); } }
+    public int AiTaskTimeoutSeconds { get => _draft.AiTaskTimeoutSeconds; set { _draft = _draft with { AiTaskTimeoutSeconds = value }; OnPropertyChanged(); } }
+    public string CapabilitySummary => $"视觉：{AiCapabilityChecks.Status(AiApiBaseUrl, AiApiKey, string.IsNullOrWhiteSpace(AiVisionModel) ? AiModel : AiVisionModel, "vision")} · 工具协议：{AiCapabilityChecks.Status(AiApiBaseUrl, AiApiKey, AiModel, "protocol")}";
     public string AiApiKey { get => _aiApiKey; set { if (SetProperty(ref _aiApiKey, value)) _credentialOrigin = Origin(AiApiBaseUrl); } }
     public string AiStatus { get; private set; } = "尚未测试连接";
-    public bool IsAiTesting { get => _isAiTesting; private set { if (SetProperty(ref _isAiTesting, value)) { TestAiModelCommand.RaiseCanExecuteChanged(); TestAiConnectionCommand.RaiseCanExecuteChanged(); } } }
+    public bool IsAiTesting { get => _isAiTesting; private set { if (SetProperty(ref _isAiTesting, value)) { TestAiModelCommand.RaiseCanExecuteChanged(); TestAiConnectionCommand.RaiseCanExecuteChanged(); TestAiVisionCommand.RaiseCanExecuteChanged(); TestAiProtocolCommand.RaiseCanExecuteChanged(); } } }
     public double BackgroundOpacity
     {
         get => _draft.BackgroundOpacity;
@@ -113,6 +122,8 @@ public sealed class SettingsViewModel : ObservableObject
     public RelayCommand CancelCommand { get; }
     public RelayCommand TestAiConnectionCommand { get; }
     public RelayCommand TestAiModelCommand { get; }
+    public RelayCommand TestAiVisionCommand { get; }
+    public RelayCommand TestAiProtocolCommand { get; }
 
     public void SelectBackground(string path)
     {
@@ -153,7 +164,10 @@ public sealed class SettingsViewModel : ObservableObject
         try
         {
             OpenAiCompatibleProvider.ValidateConfiguration(AiApiBaseUrl, AiModel);
+            if (!string.IsNullOrWhiteSpace(AiVisionModel)) OpenAiCompatibleProvider.ValidateConfiguration(AiApiBaseUrl, AiVisionModel);
             if (AiTimeoutSeconds is < 5 or > 120) throw new AiConfigurationException("超时时间必须为 5–120 秒。配置尚未保存。");
+            if (AiRequestTimeoutSeconds is < 5 or > 120 || AiTaskTimeoutSeconds is < 5 or > 600 || AiTaskTimeoutSeconds < AiRequestTimeoutSeconds)
+                throw new AiConfigurationException("单次等待为 5–120 秒，整轮上限为 5–600 秒，整轮上限不能小于单次等待。");
             // Reload before saving: a selected file may have moved since preview.
             _ = BackgroundImageLoader.Load(_draft.BackgroundImagePath);
             _apply(_draft with { AiApiKeyProtected = SecureSecretStore.Protect(_aiApiKey) });
@@ -188,10 +202,11 @@ public sealed class SettingsViewModel : ObservableObject
         try
         {
             await new OpenAiCompatibleProvider().TestConnectionAsync(AiApiBaseUrl, AiApiKey, AiModel, TimeSpan.FromSeconds(Math.Clamp(AiTimeoutSeconds, 5, 120)), cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
             AiStatus = "服务可连接；请继续测试模型回答。";
             if (!cancellation.IsCancellationRequested) Feedback.Show(AiStatus);
         }
-        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or InvalidOperationException or UriFormatException or System.Text.Json.JsonException)
+        catch (Exception exception) when (exception is HttpRequestException or IOException or OperationCanceledException or InvalidOperationException or UriFormatException or System.Text.Json.JsonException)
         {
             AppLog.Write("ai.service-test-failed", exception);
             AiStatus = exception is OperationCanceledException ? "服务检查已停止或超时，请重试。" : exception is InvalidOperationException ? exception.Message : "服务检查失败，请检查 API 地址、Key 和网络连接。";
@@ -211,10 +226,11 @@ public sealed class SettingsViewModel : ObservableObject
         try
         {
             await new OpenAiCompatibleProvider().TestModelAsync(AiApiBaseUrl, AiApiKey, AiModel, TimeSpan.FromSeconds(Math.Clamp(AiTimeoutSeconds, 5, 120)), cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
             AiStatus = "模型回答测试成功，所填模型可以生成内容。";
             if (!cancellation.IsCancellationRequested) Feedback.Show(AiStatus);
         }
-        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or InvalidOperationException or UriFormatException or System.Text.Json.JsonException)
+        catch (Exception exception) when (exception is HttpRequestException or IOException or OperationCanceledException or InvalidOperationException or UriFormatException or System.Text.Json.JsonException)
         {
             AppLog.Write("ai.model-test-failed", exception);
             AiStatus = exception is OperationCanceledException ? "模型测试已停止或超时，请重试。" : exception is InvalidOperationException ? exception.Message : "模型测试失败，请检查模型名称、服务权限和网络连接。";
@@ -224,6 +240,38 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     public void CancelPendingTest() => _testCancellation?.Cancel();
+    private async Task TestCapabilityAsync(string kind)
+    {
+        if (IsAiTesting) return;
+        if (string.IsNullOrWhiteSpace(AiApiKey)) { Feedback.Show("请先填写 API Key。", FeedbackKind.Warning); return; }
+        var endpoint = AiApiBaseUrl; var key = AiApiKey;
+        var model = kind == "vision" && !string.IsNullOrWhiteSpace(AiVisionModel) ? AiVisionModel : AiModel;
+        using var cancellation = new CancellationTokenSource(); _testCancellation = cancellation;
+        IsAiTesting = true; AiStatus = kind == "vision" ? "正在用内置测试图验证视觉能力…" : "正在验证结构化工具协议…";
+        OnPropertyChanged(nameof(AiStatus)); Feedback.Show(AiStatus, FeedbackKind.Progress);
+        try
+        {
+            var timeout = TimeSpan.FromSeconds(Math.Clamp(AiRequestTimeoutSeconds, 5, 120));
+            if (kind == "vision") await AiCapabilityChecks.TestVisionAsync(endpoint, key, model, timeout, cancellation.Token);
+            else await AiCapabilityChecks.TestProtocolAsync(endpoint, key, model, timeout, cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
+            AiCapabilityChecks.Record(endpoint, key, model, kind, "已验证");
+            AiStatus = kind == "vision" ? "视觉测试通过：模型正确读取了内置测试图。" : "工具协议测试通过：模型能够返回可解析指令。";
+            Feedback.Show(AiStatus);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or OperationCanceledException or InvalidOperationException or System.Text.Json.JsonException or ArgumentException)
+        {
+            if (!cancellation.IsCancellationRequested)
+            {
+                AiCapabilityChecks.Record(endpoint, key, model, kind, "验证失败");
+                AiStatus = ex is OperationCanceledException ? "能力测试超时，请检查服务或增加单次等待时间。" : ex is InvalidOperationException ? ex.Message : "能力测试未完成，请检查服务配置。";
+                Feedback.Show(AiStatus, FeedbackKind.Error);
+            }
+            else AiStatus = "测试已取消，修改后的配置尚未验证。";
+            AppLog.Write("ai.capability-test-failed", ex);
+        }
+        finally { _testCancellation = null; IsAiTesting = false; OnPropertyChanged(nameof(AiStatus)); OnPropertyChanged(nameof(CapabilitySummary)); }
+    }
     private static string? Origin(string value) => Uri.TryCreate(value, UriKind.Absolute, out var uri) ? uri.GetLeftPart(UriPartial.Authority).ToLowerInvariant() : null;
 
     private static bool IsImageError(Exception exception) => GameImageLoader.IsImageError(exception);

@@ -122,8 +122,11 @@ internal static partial class Program
         vm.SettingsEditor.NightMode = false;
         vm.SettingsEditor.ConfirmCommand.Execute(null);
 
+        // An invisible window can still hit-test the user's pointer and pause the toast timer.
+        main.IsHitTestVisible = false;
         main.Show();
         Pump(TimeSpan.FromMilliseconds(80));
+        Check(!toast.IsMouseOver && !toast.IsKeyboardFocusWithin, "hidden feedback timing check is isolated from desktop hover and focus");
         vm.Feedback.Show("重复保存计时测试");
         Pump(TimeSpan.FromMilliseconds(2000));
         vm.Feedback.Show("重复保存计时测试");
